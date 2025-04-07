@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Agent Manager</title>
+        <link rel="stylesheet" href="/static/style.css">
+    </head>
+    <body>
+        <div class="panel">
+            <h2>Agent Manager</h2>
+            <button id="spawnAgent">Spawn New Agent</button>
+            <h3>Active Agents</h3>
+            <ul id="agentList" class="agent-list"></ul>
+        </div>
+        <div class="panel">
+            <h2>Task Management</h2>
+            <input type="text" id="taskDesc" placeholder="Enter new task description">
+            <button id="addTask">Add Task</button>
+            <h3>New Tasks</h3>
+            <ul id="newTasks" class="task-list"></ul>
+            <h3>Running Tasks</h3>
+            <ul id="runningTasks" class="task-list"></ul>
+            <h3>Completed Tasks</h3>
+            <ul id="completedTasks" class="task-list"></ul>
+        </div>
+
+        <script src="/static/script.js"></script>
+    </body>
+</html>

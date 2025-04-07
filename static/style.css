@@ -1,0 +1,98 @@
+body {
+    font-family: sans-serif;
+    display: flex;
+    margin: 0; /* Add margin reset */
+    padding: 10px; /* Add some padding */
+    background-color: #f4f4f4; /* Light background */
+}
+
+.panel {
+    border: 1px solid #ccc;
+    padding: 15px; /* Slightly more padding */
+    margin: 10px;
+    min-width: 300px; /* Slightly wider panels */
+    background-color: #fff; /* White background for panels */
+    border-radius: 5px; /* Rounded corners */
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.1); /* Subtle shadow */
+    flex: 1; /* Allow panels to grow */
+}
+
+.panel h2 {
+    margin-top: 0;
+    border-bottom: 1px solid #eee; /* Separator line */
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+    color: #333;
+}
+.panel h3 {
+    margin-top: 20px;
+    margin-bottom: 10px;
+    color: #555;
+}
+
+.task-list, .agent-list {
+    list-style: none;
+    padding: 0;
+    max-height: 400px; /* Limit height and add scroll */
+    overflow-y: auto; /* Enable vertical scroll */
+}
+
+.task-list li, .agent-list li {
+    margin-bottom: 8px; /* More spacing */
+    padding: 8px 10px; /* Adjust padding */
+    border: 1px solid #eee;
+    border-radius: 3px; /* Slightly rounded list items */
+    display: flex; /* Use flexbox for alignment */
+    justify-content: space-between; /* Space out content and button */
+    align-items: center; /* Center items vertically */
+}
+
+/* Status Styling */
+.status-idle { background-color: #e0ffe0; border-left: 5px solid #4CAF50; }
+.status-busy { background-color: #ffe0e0; border-left: 5px solid #F44336; }
+.status-new { background-color: #e0e0ff; border-left: 5px solid #2196F3; }
+.status-running { background-color: #ffffcc; border-left: 5px solid #FFC107; }
+.status-completed { background-color: #d3d3d3; border-left: 5px solid #808080; }
+.status-failed { background-color: #ffcccc; border-left: 5px solid #E91E63; }
+.status-starting,
+.status-terminating,
+.status-disconnected_error,
+.status-exited_unexpectedly, /* Added style */
+.status-exited_normally, /* Added style */
+.status-error { background-color: #ffcc99; border-left: 5px solid #FF9800; }
+
+/* Input and Buttons */
+input[type="text"] {
+    padding: 8px;
+    margin-right: 5px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    width: calc(100% - 100px); /* Adjust width considering button */
+}
+
+button {
+    padding: 8px 12px;
+    border: none;
+    background-color: #5c87db; /* Button color */
+    color: white;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+button:hover {
+    background-color: #4a6fb1; /* Darker on hover */
+}
+
+/* Specific button adjustments */
+#agentList button {
+    padding: 4px 8px; /* Smaller button in list */
+    background-color: #f44336; /* Red for terminate */
+}
+#agentList button:hover {
+    background-color: #d32f2f;
+}
+
+#spawnAgent, #addTask {
+    margin-bottom: 15px; /* Space below main buttons */
+}
