@@ -5,16 +5,16 @@ from chat_streamer_factory import create_chat_streamer_from_yaml
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
-# 从 YAML 配置文件创建 ChatStreamer
+# Create ChatStreamer from YAML config file
 try:
-    # 获取当前文件所在目录
+    # Get current directory
     current_dir = Path(__file__).parent
     config_path = current_dir / "config_example.yaml"
     
-    # 创建 ChatStreamer 实例
+    # Create ChatStreamer instance
     streamer = create_chat_streamer_from_yaml(
         config_path,
-        # 可选：覆盖配置文件中的 API 密钥
+        # Optional: Override API key from config file
         # override_api_key="your-api-key-here"
     )
 except Exception as e:
@@ -25,11 +25,11 @@ except Exception as e:
 def create_demo():
     with gr.Blocks(css="footer {display: none !important}") as demo:
         gr.Markdown("""
-        # AI 聊天助手
-        与 AI 助手进行实时对话。使用了 OpenAI API 的流式响应功能。
+        # AI Chat Assistant
+        Real-time conversation with AI assistant. Using OpenAI API streaming response.
         """)
 
-        # 聊天界面
+        # Chat interface
         chatbot = gr.Chatbot(
             streamer.history,
             type="messages",
@@ -38,17 +38,17 @@ def create_demo():
             render_markdown=False
         )
         
-        # 用户输入
+        # User input
         msg = gr.Textbox(
-            label="输入消息",
-            placeholder="在这里输入你的消息...",
+            label="Enter message",
+            placeholder="Type your message here...",
             lines=2
         )
 
-        # 清空按钮
-        clear = gr.Button("清空对话")
+        # Clear button
+        clear = gr.Button("Clear Chat")
 
-        # 处理用户输入和 AI 响应
+        # Handle user input and AI response
         async def user(message):            
             async for content in streamer(message):
                 yield streamer.history
@@ -62,7 +62,7 @@ def create_demo():
             [chatbot],
         )
 
-        # 设置清空按钮动作
+        # Set clear button action
         clear.click(
             clear_history,
             None,

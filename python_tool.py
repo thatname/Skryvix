@@ -5,7 +5,7 @@ from io import StringIO
 
 class PythonTool(Tool):
     def description(self) -> str:
-        return "执行Python代码并返回输出结果"
+        return "Execute Python code and return output results"
 
     def use(self, args: str) -> str:
         # 保存原始的标准输出
@@ -19,9 +19,9 @@ class PythonTool(Tool):
             exec(args)
             # 获取捕获的输出
             output = redirected_output.getvalue()
-            return output if output else "代码执行成功，无输出"
+            return output if output else "Code executed successfully, no output"
         except Exception as e:
-            return f"执行出错: {str(e)}"
+            return f"Execution error: {str(e)}"
         finally:
             # 恢复原始的标准输出
             sys.stdout = old_stdout
@@ -30,50 +30,50 @@ class PythonTool(Tool):
 
 
 def test():
-    print("进入 main 函数")
-    # 创建 PythonTool 实例
+    print("Entering main function")
+    # Create PythonTool instance
     python_tool = PythonTool()
     
-    # 显示工具描述
-    print("工具描述:", python_tool.description())
-    print("\n=== 测试用例 ===\n")
+    # Display tool description
+    print("Tool description:", python_tool.description())
+    print("\n=== Test Cases ===\n")
 
-    # 测试用例1：简单打印
-    print("测试1 - 简单打印:")
+    # Test case 1: Simple print
+    print("Test 1 - Simple print:")
     code1 = 'print("Hello, Python Tool!")'
-    print("代码:", code1)
-    print("输出:", python_tool.use(code1))
+    print("Code:", code1)
+    print("Output:", python_tool.use(code1))
     print()
 
-    # 测试用例2：多行代码
-    print("测试2 - 多行代码:")
+    # Test case 2: Multiple lines of code
+    print("Test 2 - Multiple lines of code:")
     code2 = '''
 for i in range(3):
-    print(f"计数: {i}")
+    print(f"Count: {i}")
 '''
-    print("代码:", code2)
-    print("输出:", python_tool.use(code2))
+    print("Code:", code2)
+    print("Output:", python_tool.use(code2))
     print()
 
-    # 测试用例3：数学计算
-    print("测试3 - 数学计算:")
+    # Test case 3: Mathematical calculation
+    print("Test 3 - Mathematical calculation:")
     code3 = '''
 result = 0
 for i in range(1, 5):
     result += i
-print(f"1到4的和是: {result}")
+print(f"Sum of 1 to 4 is: {result}")
 '''
-    print("代码:", code3)
-    print("输出:", python_tool.use(code3))
+    print("Code:", code3)
+    print("Output:", python_tool.use(code3))
     print()
 
-    # 测试用例4：错误处理
-    print("测试4 - 错误处理:")
+    # Test case 4: Error handling
+    print("Test 4 - Error handling:")
     code4 = 'print(undefined_variable)'
-    print("代码:", code4)
-    print("输出:", python_tool.use(code4))
+    print("Code:", code4)
+    print("Output:", python_tool.use(code4))
 
 if __name__ == "__main__":
-    print("程序开始")
+    print("Program started")
     test()
-    print("程序结束")
+    print("Program ended")

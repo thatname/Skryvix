@@ -25,22 +25,22 @@ class ChatStreamer:
         seed: Optional[int] = None,
     ):
         """
-        初始化 ChatStreamer
+        Initialize ChatStreamer
 
         Args:
-            api_key (str): OpenAI API 密钥
-            model_name (str): 模型名称，默认为 "gpt-3.5-turbo"
-            base_url (Optional[str]): API 基础 URL，用于自定义端点
-            system_prompt (str): 系统提示词
-            temperature (Optional[float]): 采样温度，控制输出的随机性，范围 0-2，默认 1.0
-            top_p (Optional[float]): 核采样阈值，范围 0-1，默认 1.0
-            top_k (Optional[int]): 每个步骤考虑的最高概率标记数
-            presence_penalty (Optional[float]): 存在惩罚，范围 -2.0 到 2.0，默认 0.0
-            frequency_penalty (Optional[float]): 频率惩罚，范围 -2.0 到 2.0，默认 0.0
-            max_tokens (Optional[int]): 生成的最大标记数
-            stop (Optional[List[str]]): 停止生成的标记列表
-            response_format (Optional[Dict[str, str]]): 响应格式设置，如 {"type": "json_object"}
-            seed (Optional[int]): 随机数种子，用于可重复的结果
+            api_key (str): OpenAI API key
+            model_name (str): Model name, defaults to "gpt-3.5-turbo"
+            base_url (Optional[str]): API base URL for custom endpoints
+            system_prompt (str): System prompt
+            temperature (Optional[float]): Sampling temperature, controls randomness, range 0-2, default 1.0
+            top_p (Optional[float]): Nucleus sampling threshold, range 0-1, default 1.0
+            top_k (Optional[int]): Number of highest probability tokens to consider at each step
+            presence_penalty (Optional[float]): Presence penalty, range -2.0 to 2.0, default 0.0
+            frequency_penalty (Optional[float]): Frequency penalty, range -2.0 to 2.0, default 0.0
+            max_tokens (Optional[int]): Maximum number of tokens to generate
+            stop (Optional[List[str]]): List of tokens to stop generation
+            response_format (Optional[Dict[str, str]]): Response format settings, e.g., {"type": "json_object"}
+            seed (Optional[int]): Random seed for reproducible results
         """
         self.system_prompt = system_prompt
         self.model_name = model_name
@@ -54,10 +54,10 @@ class ChatStreamer:
         self.response_format = response_format
         self.seed = seed
 
-        # 初始化对话历史
+        # Initialize conversation history
         self.clear_history()
 
-        # 初始化 OpenAI 客户端
+        # Initialize OpenAI client
         client_kwargs = {"api_key": api_key}
         if base_url:
             client_kwargs["base_url"] = base_url
@@ -67,39 +67,39 @@ class ChatStreamer:
         
     def _build_messages(self, message: str) -> List[Dict[str, str]]:
         """
-        构建消息历史列表
+        Build message history list
 
         Args:
-            message (str): 当前用户消息
+            message (str): Current user message
 
         Returns:
-            List[Dict[str, str]]: 格式化的消息列表
+            List[Dict[str, str]]: Formatted message list
         """
         messages = [{"role": "system", "content": self.system_prompt}]
         
-        # 添加历史消息
+        # Add historical messages
         for user_msg, assistant_msg in self._history:
             messages.append({"role": "user", "content": user_msg})
             messages.append({"role": "assistant", "content": assistant_msg})
         
-        # 添加当前用户消息
+        # Add current user message
         messages.append({"role": "user", "content": message})
         
         return messages
 
     def _build_completion_params(self) -> Dict[str, Any]:
         """
-        构建完成请求参数
+        Build completion request parameters
 
         Returns:
-            Dict[str, Any]: API 请求参数
+            Dict[str, Any]: API request parameters
         """
         params = {
             "model": self.model_name,
             "stream": True,
         }
 
-        # 添加可选参数（只添加非默认值）
+        # Add optional parameters (only non-default values)
         if self.temperature is not None:
             params["temperature"] = self.temperature
         if self.top_p is not None:
@@ -124,37 +124,37 @@ class ChatStreamer:
     @classmethod
     def create_from_yaml(cls, config_path: Union[str, Path]) -> 'ChatStreamer':
         """
-        从 YAML 配置文件创建 ChatStreamer 实例
+        Create ChatStreamer instance from YAML config file
 
         Args:
-            config_path (Union[str, Path]): YAML 配置文件路径
+            config_path (Union[str, Path]): YAML config file path
 
         Returns:
-            ChatStreamer: 配置好的 ChatStreamer 实例
+            ChatStreamer: Configured ChatStreamer instance
 
         Raises:
-            FileNotFoundError: 配置文件不存在
-            yaml.YAMLError: YAML 解析错误
+            FileNotFoundError: Config file not found
+            yaml.YAMLError: YAML parsing error
         """
         
-        # 获取 API key
+        # Get API key
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("未找到 OPENAI_API_KEY 环境变量，请在 .env 文件中设置")
+            raise ValueError("OPENAI_API_KEY environment variable not found. Please set it in the .env file")
 
-        # 转换路径为 Path 对象并检查文件是否存在
+        # Convert path to Path object and check if file exists
         config_path = Path(config_path)
         if not config_path.exists():
-            raise FileNotFoundError(f"配置文件不存在: {config_path}")
+            raise FileNotFoundError(f"Config file not found: {config_path}")
 
-        # 读取并解析 YAML 文件
+        # Read and parse YAML file
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f) or {}
         except yaml.YAMLError as e:
-            raise yaml.YAMLError(f"YAML 解析错误: {e}")
+            raise yaml.YAMLError(f"YAML parsing error: {e}")
 
-        # 创建 ChatStreamer 实例
+        # Create ChatStreamer instance
         return cls(api_key=api_key, **config)
 
     async def __call__(
@@ -164,17 +164,17 @@ class ChatStreamer:
 
         self.history.append({"role": "user", "content": message})
 
-        # 构建消息和参数
+        # Build messages and parameters
         params = self._build_completion_params()
         params["messages"] = self.history
 
-        # 创建流式响应
+        # Create streaming response
         stream = await self.client.chat.completions.create(**params)
         
         self.history.append({"role": "assistant", "content": ""})
 
         try:
-            # 逐个 token 处理响应
+            # Process response token by token
             async for chunk in stream:
                 if chunk.choices[0].delta.content is not None:
                     content = chunk.choices[0].delta.content

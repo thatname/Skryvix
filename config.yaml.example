@@ -1,18 +1,18 @@
 
-# 基础配置
-model_name: "google/gemini-2.5-pro-exp-03-25:free"  # 模型名称
-base_url: "https://openrouter.ai/api/v1"  # 可选，自定义 API 端点
-system_prompt: "You are a helpful AI assistant."  # 系统提示词
+# Basic Configuration
+model_name: "google/gemini-2.5-pro-exp-03-25:free"  # Model name
+base_url: "https://openrouter.ai/api/v1"  # Optional, custom API endpoint
+system_prompt: "You are a helpful AI assistant."  # System prompt
 
-# 生成参数
-temperature: 0.7  # 采样温度，范围 0-2
-top_p: 1.0  # 核采样阈值，范围 0-1
-top_k: null  # 可选，考虑的最高概率标记数
-presence_penalty: 0.0  # 存在惩罚，范围 -2.0 到 2.0
-frequency_penalty: 0.0  # 频率惩罚，范围 -2.0 到 2.0
-max_tokens: null  # 可选，生成的最大标记数
+# Generation Parameters
+temperature: 0.7  # Sampling temperature, range 0-2
+top_p: 1.0  # Nucleus sampling threshold, range 0-1
+top_k: null  # Optional, number of highest probability tokens to consider
+presence_penalty: 0.0  # Presence penalty, range -2.0 to 2.0
+frequency_penalty: 0.0  # Frequency penalty, range -2.0 to 2.0
+max_tokens: null  # Optional, maximum number of tokens to generate
 
-# 控制参数
-stop: null  # 可选，停止标记列表，例如: ["###", "END"]
-response_format: null  # 可选，响应格式设置，例如: {"type": "json_object"}
-seed: null  # 可选，随机数种子
+# Control Parameters
+stop: null  # Optional, list of stop tokens, e.g.: ["###", "END"]
+response_format: null  # Optional, response format settings, e.g.: {"type": "json_object"}
+seed: null  # Optional, random seed

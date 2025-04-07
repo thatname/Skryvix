@@ -10,78 +10,78 @@ import sys
 import locale
 class CmdTool(Tool):
     """
-    命令行工具类，用于执行 shell 命令。
-    维护一个持久的命令行进程，同时保持简洁的接口。
-    使用后台线程持续读取命令输出。
+    Command line tool class for executing shell commands.
+    Maintains a persistent command line process while keeping a clean interface.
+    Uses a background thread to continuously read command output.
     """
     
     def __init__(self):
         """
-        初始化命令行工具，创建一个持久的命令行进程和输出读取线程。
+        Initialize command line tool, create a persistent command line process and output reader thread.
         """
-        # 创建输出缓冲队列
+        # Create output buffer queue
         self.output_queue = queue.Queue()
         self.output_buffer = b""
         self.running = True
         self.command_complete = threading.Event()
         
-        # 创建持久进程
+        # Create persistent process
         shell_cmd = 'cmd.exe /K chcp 65001' if os.name == 'nt' else 'bash'
         try:
             self.process = subprocess.Popen(
                 shell_cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # 合并标准错误到标准输出
+                stderr=subprocess.STDOUT,  # Merge stderr into stdout
                 text=False,
                 bufsize=0,
                 #universal_newlines=True
             )
-            print(f"进程已启动: PID={self.process.pid}")
+            print(f"Process started: PID={self.process.pid}")
         except Exception as e:
-            print(f"进程启动失败: {str(e)}")
+            print(f"Process start failed: {str(e)}")
             raise
 
-        # 启动输出读取线程
+        # Start output reader thread
         self.reader_thread = threading.Thread(target=self._output_reader, daemon=True)
         self.reader_thread.start()
-        print("输出读取线程已启动")
+        print("Output reader thread started")
 
     def _output_reader(self):
         """
-        后台线程函数，持续读取进程输出。
+        Background thread function, continuously reads process output.
         """
-        print("开始读取输出")
+        print("Started reading output")
         while self.running:
             try:
                 char = self.process.stdout.read(1)
                 if not char and self.process.poll() is not None:
-                    print("进程已结束")
+                    print("Process ended")
                     break
                 if char:
                     self.output_queue.put(char)
             except Exception as e:
-                print(f"读取输出时出错: {str(e)}")
+                print(f"Error reading output: {str(e)}")
                 break
-        print("输出读取线程结束")
+        print("Output reader thread ended")
 
     def description(self) -> str:
         """
-        返回工具的描述信息。
+        Returns the tool's description.
 
         Returns:
-            str: 工具的描述
+            str: Tool description
         """
-        return "命令行工具：执行 shell 命令并返回输出结果。输入为要执行的命令字符串。"
+        return "Command line tool: Execute shell commands and return output results. Input is the command string to execute."
 
     def _getstdout(self) -> bytes:
         """
-        获取当前缓冲区中的所有输出。
+        Get all output from current buffer.
 
         Returns:
-            str: 缓冲区中的输出内容
+            str: Output content in buffer
         """
-        # 清空队列中的所有内容
+        # Clear all content in queue
         while not self.output_queue.empty():
             try:
                 char = self.output_queue.get_nowait()
@@ -93,23 +93,23 @@ class CmdTool(Tool):
     
     def use(self, args: str) -> str:
         """
-        在持久进程中执行命令并返回结果。
-        会持续检查输出直到输出稳定（不再变化）或超时。
+        Execute command in persistent process and return result.
+        Continuously checks output until it stabilizes (no more changes) or times out.
 
         Args:
-            args (str): 要执行的命令
+            args (str): Command to execute
 
         Returns:
-            str: 命令的输出结果
+            str: Command output result
         """
-        timeout = 300  # 总体超时时间
-        no_change_timeout = 2  # 输出无变化的超时时间（秒）
+        timeout = 300  # Total timeout
+        no_change_timeout = 2  # Timeout for no output changes (seconds)
         try:
-            print(f"\n执行命令: {args}")
+            print(f"\nExecuting command: {args}")
 
             self.process.stdin.write((args + '\n').encode("utf-8"))
             self.process.stdin.flush()
-            print("命令已发送")
+            print("Command sent")
 
             start_time = time.time()
             last_output = b""
@@ -117,38 +117,38 @@ class CmdTool(Tool):
 
             while True:
                 current_time = time.time()
-                # 检查是否超过总体超时时间
+                # Check if total timeout exceeded
                 if current_time - start_time > timeout:
-                    print("命令执行超时")
+                    print("Command execution timed out")
                     break
 
                 # 获取当前输出
                 current_output = self._getstdout()
                 
-                # 如果输出有变化，更新最后变化时间
+                # If output changed, update last change time
                 if current_output != last_output:
                     last_output = current_output
                     last_change_time = current_time
-                # 如果输出在一定时间内没有变化，认为命令执行完成
+                # If output hasn't changed for a while, consider command complete
                 elif current_time - last_change_time > no_change_timeout and current_output.endswith(b">"):
-                    print("输出已稳定")
+                    print("Output stabilized")
                     break
 
-                # 短暂休眠以避免过度消耗CPU
+                # Brief sleep to avoid excessive CPU usage
                 time.sleep(0.1)
 
-            print(f"命令执行完成，输出长度: {len(last_output)}")
+            print(f"Command execution completed, output length: {len(last_output)}")
             return last_output.decode("utf-8")
 #locale.getpreferredencoding()
         except Exception as e:
-            print(f"命令执行失败: {str(e)}")
-            return f"命令执行失败: {str(e)}"
+            print(f"Command execution failed: {str(e)}")
+            return f"Command execution failed: {str(e)}"
 
     def __del__(self):
         """
-        析构函数，确保进程、线程和缓冲区被正确清理。
+        Destructor, ensures process, thread and buffer are properly cleaned up.
         """
-        print("开始清理资源")
+        print("Starting resource cleanup")
         self.running = False
         
         if hasattr(self, 'process') and self.process:
@@ -156,33 +156,33 @@ class CmdTool(Tool):
                 self.process.terminate()
                 self.process.wait(timeout=1.0)
             except Exception as e:
-                print(f"终止进程时出错: {str(e)}")
+                print(f"Error terminating process: {str(e)}")
                 self.process.kill()
             
         if hasattr(self, 'reader_thread') and self.reader_thread:
             self.reader_thread.join(timeout=1.0)
         
-        print("资源清理完成")
+        print("Resource cleanup completed")
 
 
 def main():
-    # 创建命令行工具实例
+    # Create command line tool instance
     cmd_tool = CmdTool()
     
-    # 打印工具描述
-    print("工具描述:", cmd_tool.description())
+    # Print tool description
+    print("Tool description:", cmd_tool.description())
     print("\n" + "="*50 + "\n")
 
-    # 测试一些基本命令
+    # Test some basic commands
     commands = [
         "echo Hello, World!",
-        "dir",  # Windows 下列出目录内容
-        "type cmd_tool.py",  # Windows 下查看文件内容
+        "dir",  # List directory contents on Windows
+        "type cmd_tool.py",  # View file contents on Windows
     ]
 
-    # 执行每个测试命令
+    # Execute each test command
     for cmd in commands:
-        print(f"执行命令: {cmd}")
+        print(f"Executing command: {cmd}")
         print("-" * 30)
         result = cmd_tool.use(cmd)
         print(result)
