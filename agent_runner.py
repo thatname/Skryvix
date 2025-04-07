@@ -8,7 +8,7 @@ from agent import Agent  # Assuming agent.py is in the same directory or Python 
 
 # --- Configuration ---
 # Get agent config path from environment or use default from server.py
-AGENT_CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH", "config.yaml")
+AGENT_CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH", "agent.yaml")
 
 # --- Helper Functions ---
 async def send_json(ws, data):

@@ -1,0 +1,29 @@
+
+# ChatStreamer configuration file path
+streamer_config: config.yaml
+
+# Prompt template file paths
+system_prompt_template: prompts/system.j2
+user_prompt_template: prompts/user.j2
+
+# Tools configuration
+tools:
+  # File reading tool example
+  - class: python_tool.PythonTool
+    params:
+      
+#  # Command execution tool example
+#  - class: tools.execute.ExecuteCommandTool
+#    params:
+#      shell: cmd
+#      working_dir: ./workspace
+#      
+#  # File search tool example
+#  - class: tools.search.SearchFilesTool
+#    params:
+#      base_path: ./workspace
+#      
+#  # Code definition tool example
+#  - class: tools.code.ListDefinitionsTool
+#    params:
+#      supported_extensions: [".py", ".js", ".ts"]

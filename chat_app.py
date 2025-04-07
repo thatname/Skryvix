@@ -9,7 +9,7 @@ load_dotenv()
 try:
     # Get current directory
     current_dir = Path(__file__).parent
-    config_path = current_dir / "config.yaml"
+    config_path = current_dir / "model.yaml"
     
     # Create ChatStreamer instance
     streamer = ChatStreamer.create_from_yaml(

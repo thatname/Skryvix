@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional
 import asyncio.subprocess as subprocess # Added for process management
 
 # --- Configuration ---
-AGENT_CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH", "config.yaml") # Default config path
+AGENT_CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH", "agent.yaml") # Default config path
 AGENT_SCRIPT_PATH = "agent_runner.py" # Script to run for each agent
 
 # --- FastAPI App ---
