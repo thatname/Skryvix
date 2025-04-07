@@ -1,7 +1,11 @@
 
-from typing import List, Tuple, Optional, AsyncGenerator, Any, Dict
+from typing import List, Tuple, Optional, AsyncGenerator, Any, Dict, Union
 from openai import AsyncOpenAI
 import asyncio
+import yaml
+import json
+import os
+from pathlib import Path
 
 class ChatStreamer:
     def __init__(
@@ -116,6 +120,42 @@ class ChatStreamer:
             params["seed"] = self.seed
 
         return params
+
+    @classmethod
+    def create_from_yaml(cls, config_path: Union[str, Path]) -> 'ChatStreamer':
+        """
+        从 YAML 配置文件创建 ChatStreamer 实例
+
+        Args:
+            config_path (Union[str, Path]): YAML 配置文件路径
+
+        Returns:
+            ChatStreamer: 配置好的 ChatStreamer 实例
+
+        Raises:
+            FileNotFoundError: 配置文件不存在
+            yaml.YAMLError: YAML 解析错误
+        """
+        
+        # 获取 API key
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("未找到 OPENAI_API_KEY 环境变量，请在 .env 文件中设置")
+
+        # 转换路径为 Path 对象并检查文件是否存在
+        config_path = Path(config_path)
+        if not config_path.exists():
+            raise FileNotFoundError(f"配置文件不存在: {config_path}")
+
+        # 读取并解析 YAML 文件
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f) or {}
+        except yaml.YAMLError as e:
+            raise yaml.YAMLError(f"YAML 解析错误: {e}")
+
+        # 创建 ChatStreamer 实例
+        return cls(api_key=api_key, **config)
 
     async def __call__(
         self,
