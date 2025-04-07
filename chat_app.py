@@ -1,18 +1,18 @@
 
 import os
 import gradio as gr
-from chat_streamer_factory import create_chat_streamer_from_yaml
 from pathlib import Path
 from dotenv import load_dotenv
+from chat_streamer import ChatStreamer
 load_dotenv()
 # Create ChatStreamer from YAML config file
 try:
     # Get current directory
     current_dir = Path(__file__).parent
-    config_path = current_dir / "config_example.yaml"
+    config_path = current_dir / "config.yaml"
     
     # Create ChatStreamer instance
-    streamer = create_chat_streamer_from_yaml(
+    streamer = ChatStreamer.create_from_yaml(
         config_path,
         # Optional: Override API key from config file
         # override_api_key="your-api-key-here"
