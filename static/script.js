@@ -220,8 +220,8 @@ function updateProgressPanelDelta(payload) {
     const displayedTaskIdShort = progressTaskId.textContent.replace('Task ID: ', '');
     if (receivedTaskId.startsWith(displayedTaskIdShort)) { // Compare with truncated ID
         // Add separator if it's the first assistant token (history ends with user prompt)
-        if (progressContent.textContent.split('|||').length < 3) {
-             progressContent.textContent += "|||";
+        if (progressContent.textContent.split('\n|||\n').length < 3) {
+             progressContent.textContent += "\n|||\n";
         }
         progressContent.textContent += token;
         // Scroll to bottom to show the latest token

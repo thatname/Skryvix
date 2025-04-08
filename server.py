@@ -101,7 +101,7 @@ async def assign_task_if_possible():
                 task["status"] = "running"
                 task["assigned_agent_id"] = idle_agent_id
                 # Initialize history and watchers
-                task["history"] = f"user|||{task['description']}" # Start history with user prompt
+                task["history"] = f"user\n|||\n{task['description']}" # Start history with user prompt
                 task["watching_uis"] = set()
 
                 # Notify agent and UI
@@ -347,7 +347,7 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
     try:
         while True:
             data = await websocket.receive_json()
-            print(f"Received from Agent {agent_id}: {data}")
+            # print(f"Received from Agent {agent_id}: {data}")
             message_type = data.get("type")
             payload = data.get("payload", {})
 
@@ -383,9 +383,9 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
                         print(f"Warning: Initialized missing history for task {task_id} during progress update.")
 
                     # Check if this is the first assistant token for this task history
-                    # If history only contains 'user|||...', add the separator
-                    if tasks[task_id]['history'].count('|||') < 2:
-                        tasks[task_id]['history'] += "|||" # Correctly indented line
+                    # If history only contains 'user\n|||\n...', add the separator
+                    if tasks[task_id]['history'].count('\n|||\n') < 2:
+                        tasks[task_id]['history'] += "\n|||\n" # Correctly indented line
 
                     tasks[task_id]['history'] += token # Correctly indented line
 
