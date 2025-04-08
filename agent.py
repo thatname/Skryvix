@@ -171,23 +171,3 @@ class Agent:
                     async for response_token in self.chat_streamer(f"Tool execution result: {result}"):
                         yield response_token
             yield token
-            
-    async def query(self, message: str):
-        """
-        Query agent with a message
-        
-        Args:
-            message (str): Message to send to agent
-        """
-        buffer = ""
-        async for token in self.chat_streamer(message):
-            buffer += token
-            # Check for complete tool calls
-            if '>' in token:  # Potential end of XML tag
-                result, remaining = await self._process_tool_call(buffer)
-                if result:
-                    # Feed tool result back to chat
-                    buffer = remaining or ""  # Use remaining content or empty string
-                    async for response_token in self.chat_streamer(f"Tool execution result: {result}"):
-                        yield response_token
-            yield token
