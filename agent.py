@@ -137,7 +137,7 @@ class Agent:
                 except Exception as e:
                     return f"Error executing tool {tool_name}: {str(e)}"
                     
-        return None, None
+        return None
         
     async def start(self, user_task: str):
         """
