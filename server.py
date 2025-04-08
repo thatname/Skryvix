@@ -14,6 +14,19 @@ import asyncio.subprocess as subprocess # Added for process management
 AGENT_CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH", "agent.yaml") # Default config path
 AGENT_SCRIPT_PATH = "agent_runner.py" # Script to run for each agent
 
+AGENT_CONFIG_DIR = 'agent_configs'
+available_agent_configs = []
+try:
+    config_dir_path = os.path.join(os.path.dirname(__file__), AGENT_CONFIG_DIR)
+    if os.path.exists(config_dir_path) and os.path.isdir(config_dir_path):
+        available_agent_configs = [
+            os.path.abspath(os.path.join(config_dir_path, f))
+            for f in os.listdir(config_dir_path)
+            if f.endswith(('.yaml', '.yml'))
+        ]
+except Exception as e:
+    print(f"Error loading agent configs: {e}")
+
 # --- FastAPI App ---
 app = FastAPI()
 
@@ -29,6 +42,14 @@ tasks: Dict[str, Dict[str, Any]] = {}
 ui_connections: List[WebSocket] = [] # Note: We use task['watching_uis'] for progress updates, this list is for general state broadcasts
 # Store active agent connections: {agent_id: websocket}
 agent_connections: Dict[str, WebSocket] = {}
+
+@app.get('/get_configs')
+async def get_configs():
+    config_dir = os.path.join(os.path.dirname(__file__), AGENT_CONFIG_DIR)
+    if not os.path.exists(config_dir) or not os.path.isdir(config_dir):
+        return {"configs": []}
+    filenames = [f for f in os.listdir(config_dir) if f.endswith(('.yaml', '.yml', '.yaml.example', '.yml.example'))]
+    return {"configs": filenames}
 
 # --- Helper Functions ---
 async def broadcast_to_ui(message: Dict[str, Any]):
@@ -152,11 +173,16 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                     server_ws_url = "ws://localhost:8000" # Adjust as needed
 
                     # Command to run the agent runner script
+                    config_filename = payload.get("config", "example_agent.yaml")
+                    config_dir_path = os.path.join(os.path.dirname(__file__), AGENT_CONFIG_DIR)
+                    config_path = os.path.join(config_dir_path, config_filename)
+                    
                     cmd = [
                         sys.executable, # Use the same Python interpreter
                         AGENT_SCRIPT_PATH,
                         "--agent-id", agent_id,
-                        "--server-url", server_ws_url
+                        "--server-url", server_ws_url,
+                        "--config-path", config_path
                     ]
                     print(f"Spawning agent {agent_id} with command: {' '.join(cmd)}")
 

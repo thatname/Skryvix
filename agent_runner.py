@@ -6,9 +6,6 @@ import os
 import sys
 from agent import Agent  # Assuming agent.py is in the same directory or Python path
 
-# --- Configuration ---
-# Get agent config path from environment or use default from server.py
-AGENT_CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH", "agent.yaml")
 
 # --- Helper Functions ---
 async def send_json(ws, data):
@@ -31,17 +28,17 @@ async def send_task_result(ws, agent_id, task_id, status, result):
     await send_json(ws, {"type": "task_result", "payload": {"agent_id": agent_id, "task_id": task_id, "status": status, "result": result}})
 
 # --- Main Agent Runner Logic ---
-async def run_agent(agent_id: str, server_ws_url: str):
+async def run_agent(agent_id: str, server_ws_url: str, agent_config_path: str):
     """Initializes agent, connects to server, and handles tasks."""
     print(f"Agent {agent_id}: Initializing...")
 
     # 1. Initialize the Agent
     try:
         # Ensure the config path exists
-        if not os.path.exists(AGENT_CONFIG_PATH):
-             print(f"Error: Agent config file '{AGENT_CONFIG_PATH}' not found.")
-             print("Ensure the config file exists or set the AGENT_CONFIG_PATH environment variable.")
-             sys.exit(f"Agent {agent_id} cannot start: Config file '{AGENT_CONFIG_PATH}' not found.")
+        if not os.path.exists(agent_config_path):
+             print(f"Error: Agent config file '{agent_config_path}' not found.")
+             print("Ensure the config file exists or set the agent_config_path environment variable.")
+             sys.exit(f"Agent {agent_id} cannot start: Config file '{agent_config_path}' not found.")
 
         # Load python-dotenv if available to get OPENAI_API_KEY etc.
         try:
@@ -51,8 +48,8 @@ async def run_agent(agent_id: str, server_ws_url: str):
         except ImportError:
             print(f"Agent {agent_id}: python-dotenv not installed, relying on system environment variables.")
 
-        agent_instance = Agent.create(AGENT_CONFIG_PATH)
-        print(f"Agent {agent_id}: Agent instance created successfully from {AGENT_CONFIG_PATH}.")
+        agent_instance = Agent.create(agent_config_path)
+        print(f"Agent {agent_id}: Agent instance created successfully from {agent_config_path}.")
     except Exception as e:
         print(f"Agent {agent_id}: Failed to initialize agent - {e}")
         # Optionally notify server if possible, but likely can't connect yet
@@ -146,13 +143,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Agent Runner Process")
     parser.add_argument("--agent-id", required=True, help="Unique ID for this agent instance")
     parser.add_argument("--server-url", required=True, help="WebSocket URL of the management server (e.g., ws://localhost:8000)")
+    parser.add_argument("--config-path", required=True, help="Agent config YAML file path")
     args = parser.parse_args()
 
     print(f"Starting agent runner for Agent ID: {args.agent_id}")
     print(f"Connecting to Server URL: {args.server_url}")
+    print(f"Agent config YAML file path: {args.config_path}")
 
     # Run the main async function
     try:
-        asyncio.run(run_agent(args.agent_id, args.server_url))
+        asyncio.run(run_agent(args.agent_id, args.server_url, args.config_path))
     except KeyboardInterrupt:
         print(f"Agent {args.agent_id}: Received KeyboardInterrupt, shutting down.")

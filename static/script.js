@@ -158,10 +158,28 @@ function updateUI(agents, tasks) {
     if (!hasCompleted) completedTasksList.innerHTML = '<li>No completed tasks.</li>';
 }
 
+async function loadConfigs() {
+    const response = await fetch('/get_configs');
+    const data = await response.json();
+    const select = document.getElementById('config-select');
+    select.innerHTML = '';
+    data.configs.forEach(config => {
+        const option = document.createElement('option');
+        option.value = config;
+        option.textContent = config;
+        select.appendChild(option);
+    });
+}
+
+window.onload = async () => {
+    await loadConfigs();
+};
+
 // --- Event Handlers ---
 spawnAgentBtn.onclick = () => {
-    console.log("Requesting agent spawn");
-    sendWsCommand({ command: 'spawn_agent' });
+    const config = document.getElementById('config-select').value;
+    console.log("Requesting agent spawn with config:", config);
+    sendWsCommand({ command: 'spawn_agent', payload: { config: config } });
 };
 
 addTaskBtn.onclick = () => {

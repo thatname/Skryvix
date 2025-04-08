@@ -1,0 +1,17 @@
+# Basic Configuration
+model_name: "gemini-2.5-pro-exp-03-25"  # Model name
+base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"  # Optional, custom API endpoint
+system_prompt: "You are a helpful AI assistant."  # System prompt
+
+# Generation Parameters
+temperature: null  # Sampling temperature, range 0-2
+top_p: null  # Nucleus sampling threshold, range 0-1
+top_k: null  # Optional, number of highest probability tokens to consider
+presence_penalty: null  # Presence penalty, range -2.0 to 2.0
+frequency_penalty: null # Frequency penalty, range -2.0 to 2.0
+max_tokens: null  # Optional, maximum number of tokens to generate
+
+# Control Parameters
+stop: null  # Optional, list of stop tokens, e.g.: ["###", "END"]
+response_format: null  # Optional, response format settings, e.g.: {"type": "json_object"}
+seed: null  # Optional, random seed
