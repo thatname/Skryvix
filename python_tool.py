@@ -4,8 +4,19 @@ import sys
 from io import StringIO
 
 class PythonTool(Tool):
+    def name(self)->str:
+        return "python"
     def description(self) -> str:
-        return "Execute Python code and return output results"
+        return """* python - Execute python code. For example: 
+```python
+def display_file(path)
+    with open(, 'r') as f:
+        print(f.read())
+display_file('c:/repository/file.cpp')
+```
+The python interpreter is persistent, You can reuse python funciton you've already written. 
+In order to complete your development task, you can write python code to manipulate the code within this repository's source files.
+"""
 
     def use(self, args: str) -> str:
         # 保存原始的标准输出
@@ -19,7 +30,7 @@ class PythonTool(Tool):
             exec(args)
             # 获取捕获的输出
             output = redirected_output.getvalue()
-            return output if output else "Code executed successfully, no output"
+            return output if output else "Python code executed successfully, no output"
         except Exception as e:
             return f"Execution error: {str(e)}"
         finally:

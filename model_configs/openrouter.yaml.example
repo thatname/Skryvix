@@ -1,7 +1,8 @@
 # Basic Configuration
-model_name: "gemini-2.5-pro-exp-03-25"  # Model name
-base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"  # Optional, custom API endpoint
+model_name: "google/gemini-2.5-pro-exp-03-25:free"  # Model name
+base_url: "https://openrouter.ai/api/v1"  # Optional, custom API endpoint
 system_prompt: "You are a helpful AI assistant."  # System prompt
+api_key_env_var: "OPENROUTER_API_KEY" # This is enviornment variable name for google API key.
 
 # Generation Parameters
 temperature: null  # Sampling temperature, range 0-2

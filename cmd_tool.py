@@ -14,6 +14,8 @@ class CmdTool(Tool):
     Maintains a persistent command line process while keeping a clean interface.
     Uses a background thread to continuously read command output.
     """
+    def name(self)->str:
+        return "cmd"
     
     def __init__(self):
         """
@@ -72,7 +74,15 @@ class CmdTool(Tool):
         Returns:
             str: Tool description
         """
-        return "Command line tool: Execute shell commands and return output results. Input is the command string to execute."
+        return """* cmd - Windows command prompt. Example:
+```cmd
+dir
+git add -A
+git commit -m "feat: add splash screen (#173)"
+```
+Response of this tool will include all the file names inside current direction, followed by the git commit result.
+"""
+
 
     def _getstdout(self) -> bytes:
         """

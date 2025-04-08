@@ -96,7 +96,7 @@ class Agent:
         self.user_prompt_template = Template(user_prompt_template)
         
         # Create tool name to tool instance mapping
-        self.tool_map = {tool.__class__.__name__: tool for tool in tools}
+        self.tool_map = {tool.name(): tool for tool in tools}
         
     def _prepare_system_prompt(self) -> str:
         """
@@ -123,22 +123,19 @@ class Agent:
                                                or (None, None) if no tool call found
         """
         # Match XML-style tool calls
-        tool_pattern = r'<(\w+)>(.*?)</\1>'
+        tool_pattern = r'```(.*?)\n(.*?)```'
         match = re.search(tool_pattern, content, re.DOTALL)
-        
         if match:
-            tool_name = match.group(1)
-            args = match.group(2).strip()
+            tool_name = match.group(1).strip()
+            args = match.group(2)
             
             if tool_name in self.tool_map:
                 tool = self.tool_map[tool_name]
                 try:
                     result = tool.use(args)
-                    # Return result and remaining content after tool call
-                    remaining = content[match.end():]
-                    return result, remaining
+                    return f"You invoked tool {tool_name}, result is:\n" + result
                 except Exception as e:
-                    return f"Error executing tool {tool_name}: {str(e)}", content[match.end():]
+                    return f"Error executing tool {tool_name}: {str(e)}"
                     
         return None, None
         
@@ -151,23 +148,25 @@ class Agent:
         """
         # Set system prompt
         self.chat_streamer.system_prompt = self._prepare_system_prompt()
-        
+        self.chat_streamer.stop = ['```\n'] # Tool calling by code.
         # Clear chat history
         self.chat_streamer.clear_history()
         
         # Prepare initial user prompt
-        initial_prompt = self._prepare_user_prompt(user_task)
+        prompt = self._prepare_user_prompt(user_task)
         
         # Start streaming conversation
-        buffer = ""
-        async for token in self.chat_streamer(initial_prompt):
-            buffer += token
-            # Check for complete tool calls
-            if '>' in token:  # Potential end of XML tag
-                result, remaining = await self._process_tool_call(buffer)
-                if result:
-                    # Feed tool result back to chat
-                    buffer = remaining or ""  # Use remaining content or empty string
-                    async for response_token in self.chat_streamer(f"Tool execution result: {result}"):
-                        yield response_token
-            yield token
+        while True:
+            buffer = ""
+            async for token in self.chat_streamer(prompt):
+                buffer += token
+                yield token
+            
+            #if buffer.endswith("`"):
+            result = await self._process_tool_call(buffer)
+            if result:
+                prompt = result
+                yield "\n|||\n" + prompt + "\n|||\n"
+
+            else:
+                break

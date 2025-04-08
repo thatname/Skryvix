@@ -10,7 +10,7 @@ from pathlib import Path
 class ChatStreamer:
     def __init__(
         self,
-        api_key: str,
+        api_key_env_var: str,
         model_name: str = "gpt-3.5-turbo",
         base_url: Optional[str] = None,
         system_prompt: str = "You are a helpful AI assistant.",
@@ -57,8 +57,13 @@ class ChatStreamer:
         # Initialize conversation history
         self.clear_history()
 
+        api_key = os.getenv(api_key_env_var)
+        if not api_key:
+                raise ValueError("${api_key_env_var} environment variable not found. Please set it in the .env file")
+    
         # Initialize OpenAI client
         client_kwargs = {"api_key": api_key}
+                    
         if base_url:
             client_kwargs["base_url"] = base_url
         self.client = AsyncOpenAI(**client_kwargs)
@@ -136,11 +141,6 @@ class ChatStreamer:
             FileNotFoundError: Config file not found
             yaml.YAMLError: YAML parsing error
         """
-        
-        # Get API key
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable not found. Please set it in the .env file")
 
         # Convert path to Path object and check if file exists
         config_path = Path(config_path)
@@ -151,11 +151,13 @@ class ChatStreamer:
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f) or {}
+                # Get API key
+        
         except yaml.YAMLError as e:
             raise yaml.YAMLError(f"YAML parsing error: {e}")
 
         # Create ChatStreamer instance
-        return cls(api_key=api_key, **config)
+        return cls(**config)
 
     async def __call__(
         self,
