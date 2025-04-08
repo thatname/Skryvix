@@ -96,7 +96,7 @@ async def run_agent(agent_id: str, server_ws_url: str):
                             async for token in agent_instance.start(task_description):
                                 full_response += token
                                 # Optional: Send intermediate progress updates if needed
-                                # await send_json(websocket, {"type": "progress_update", "payload": {"agent_id": agent_id, "task_id": task_id, "token": token}})
+                                await send_json(websocket, {"type": "progress_update", "payload": {"agent_id": agent_id, "task_id": task_id, "token": token}})
 
                             task_result = full_response
                             task_status = "completed"

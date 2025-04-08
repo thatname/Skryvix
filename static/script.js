@@ -6,6 +6,10 @@ const completedTasksList = document.getElementById('completedTasks');
 const spawnAgentBtn = document.getElementById('spawnAgent');
 const addTaskBtn = document.getElementById('addTask');
 const taskDescInput = document.getElementById('taskDesc');
+const progressPanel = document.getElementById('progressPanel');
+const progressTaskId = document.getElementById('progressTaskId');
+const progressContent = document.getElementById('progressContent');
+const closeProgressPanel = document.getElementById('closeProgressPanel');
 
 // --- WebSocket Setup ---
 const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -28,9 +32,19 @@ function connectWebSocket() {
     ws.onmessage = function(event) {
         try {
             const data = JSON.parse(event.data);
-            console.log("Received state:", data);
+            console.log("Received message:", data);
             if (data.type === 'state') {
                 updateUI(data.agents, data.tasks);
+            } else if (data.type === 'task_progress_full') {
+                updateProgressPanelFull(data.payload);
+            } else if (data.type === 'task_progress_delta') {
+                updateProgressPanelDelta(data.payload);
+            } else if (data.type === 'error') { // Handle potential errors from server
+                console.error("Server error:", data.payload.message);
+                // Optionally display error to user, e.g., in the progress panel
+                if (progressPanel.style.display === 'block') {
+                    progressContent.textContent = `Error: ${data.payload.message}`;
+                }
             } else {
                 console.warn("Received unknown message type:", data.type);
             }
@@ -121,6 +135,8 @@ function updateUI(agents, tasks) {
         }
         li.textContent = text;
         li.title = `ID: ${taskId}\nStatus: ${task.status}\nDescription: ${task.description}\nResult: ${JSON.stringify(task.result, null, 2)}`; // Tooltip with full details
+        li.style.cursor = 'pointer'; // Indicate it's clickable
+        li.onclick = () => requestTaskProgress(taskId); // Add click handler
 
         if (task.status === 'new') {
             newTasksList.appendChild(li);
@@ -168,9 +184,56 @@ function sendWsCommand(commandData) {
         ws.send(JSON.stringify(commandData));
     } else {
          console.error("WebSocket not connected. Cannot send command:", commandData);
-         alert("WebSocket connection is not open. Please wait or refresh.");
+    alert("WebSocket connection is not open. Please wait or refresh.");
     }
 }
+
+// --- Progress Panel Logic ---
+function requestTaskProgress(taskId) {
+    console.log(`Requesting progress for task: ${taskId}`);
+    progressPanel.style.display = 'block'; // Show the panel
+    progressTaskId.textContent = `Task ID: ${taskId.substring(0, 8)}`; // Display truncated ID
+    progressContent.textContent = 'Loading...'; // Set loading state
+    sendWsCommand({ command: 'get_progress', payload: { task_id: taskId } });
+}
+
+function updateProgressPanelFull(payload) {
+    const receivedTaskId = payload.task_id;
+    const history = payload.history;
+    // Check if the received progress corresponds to the currently displayed task ID
+    const displayedTaskIdShort = progressTaskId.textContent.replace('Task ID: ', '');
+    if (receivedTaskId.startsWith(displayedTaskIdShort)) { // Compare with truncated ID
+         progressContent.textContent = history; // Use textContent for <pre>
+         // Scroll to bottom after loading full history
+         progressContent.scrollTop = progressContent.scrollHeight;
+    } else {
+         console.log(`Received full progress for ${receivedTaskId}, but panel shows ${displayedTaskIdShort}. Ignoring.`);
+    }
+}
+
+function updateProgressPanelDelta(payload) {
+    const receivedTaskId = payload.task_id;
+    const token = payload.token;
+    // Check if the received progress corresponds to the currently displayed task ID
+    const displayedTaskIdShort = progressTaskId.textContent.replace('Task ID: ', '');
+    if (receivedTaskId.startsWith(displayedTaskIdShort)) { // Compare with truncated ID
+        // Add separator if it's the first assistant token (history ends with user prompt)
+        if (progressContent.textContent.split('|||').length < 3) {
+             progressContent.textContent += "|||";
+        }
+        progressContent.textContent += token;
+        // Scroll to bottom to show the latest token
+        progressContent.scrollTop = progressContent.scrollHeight;
+    } else {
+         console.log(`Received delta progress for ${receivedTaskId}, but panel shows ${displayedTaskIdShort}. Ignoring.`);
+    }
+}
+
+closeProgressPanel.onclick = () => {
+    progressPanel.style.display = 'none';
+    // Optional: Send a message to server to stop watching? Not implemented server-side yet.
+};
+
 
 // --- Initial Connection ---
 connectWebSocket();

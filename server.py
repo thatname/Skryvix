@@ -23,10 +23,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # --- State Management ---
 # Store agent information: {agent_id: {"id": agent_id, "process": process_handle, "status": "idle/busy/starting/terminating/error", "websocket": websocket}}
 agents: Dict[str, Dict[str, Any]] = {}
-# Store task information: {task_id: {"id": task_id, "description": desc, "status": "new/running/completed/failed", "assigned_agent_id": agent_id, "result": result}}
+# Store task information: {task_id: {"id": task_id, "description": desc, "status": "new/running/completed/failed", "assigned_agent_id": agent_id, "result": result, "history": str, "watching_uis": set[WebSocket]}}
 tasks: Dict[str, Dict[str, Any]] = {}
 # Store active UI connections
-ui_connections: List[WebSocket] = []
+ui_connections: List[WebSocket] = [] # Note: We use task['watching_uis'] for progress updates, this list is for general state broadcasts
 # Store active agent connections: {agent_id: websocket}
 agent_connections: Dict[str, WebSocket] = {}
 
@@ -54,7 +54,36 @@ def get_current_state() -> Dict[str, Any]:
         agent_id: {k: v for k, v in agent_data.items() if k not in ["process", "websocket"]}
         for agent_id, agent_data in agents.items()
     }
-    return {"type": "state", "agents": serializable_agents, "tasks": tasks}
+    # Avoid sending large history or watcher sets in general state updates
+    serializable_tasks = {
+        task_id: {k: v for k, v in task_data.items() if k not in ["history", "watching_uis"]}
+        for task_id, task_data in tasks.items()
+    }
+    return {"type": "state", "agents": serializable_agents, "tasks": serializable_tasks}
+
+async def broadcast_delta_to_watching_uis(task_id: str, message: Dict[str, Any]):
+    """Sends a delta message only to UIs watching a specific task."""
+    if task_id not in tasks or 'watching_uis' not in tasks[task_id]:
+        return
+
+    disconnected_watchers = set()
+    # Iterate over a copy of the set in case it's modified during iteration (though unlikely here)
+    watchers = list(tasks[task_id]['watching_uis'])
+
+    for connection in watchers:
+        try:
+            await connection.send_json(message)
+        except (WebSocketDisconnect, RuntimeError) as e: # Catch RuntimeError for 'WebSocket is closed'
+            print(f"UI watcher for task {task_id} disconnected or error: {e}. Removing.")
+            disconnected_watchers.add(connection)
+        except Exception as e:
+            print(f"Error sending delta to UI watcher for task {task_id}: {e}")
+            disconnected_watchers.add(connection) # Assume disconnect on other errors too
+
+    # Clean up disconnected watchers from the specific task's set
+    if disconnected_watchers:
+        tasks[task_id]['watching_uis'].difference_update(disconnected_watchers)
+
 
 async def assign_task_if_possible():
     """Assigns a new task to an idle agent if available."""
@@ -71,10 +100,13 @@ async def assign_task_if_possible():
                 agents[idle_agent_id]["status"] = "busy"
                 task["status"] = "running"
                 task["assigned_agent_id"] = idle_agent_id
+                # Initialize history and watchers
+                task["history"] = f"user|||{task['description']}" # Start history with user prompt
+                task["watching_uis"] = set()
 
                 # Notify agent and UI
                 await agent_ws.send_json({"type": "assign_task", "task_id": new_task_id, "description": task["description"]})
-                await broadcast_to_ui(get_current_state())
+                await broadcast_to_ui(get_current_state()) # Broadcast general state update
                 print(f"Task {new_task_id} assigned successfully.")
             except Exception as e:
                 print(f"Error assigning task {new_task_id} to agent {idle_agent_id}: {e}")
@@ -203,22 +235,57 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                 if task_desc:
                     task_id = str(uuid.uuid4())
                     print(f"UI added task {task_id}: {task_desc}")
-                    tasks[task_id] = {"id": task_id, "description": task_desc, "status": "new", "assigned_agent_id": None, "result": None}
+                    # Initialize task with history and watchers keys, even if empty initially
+                    tasks[task_id] = {
+                        "id": task_id,
+                        "description": task_desc,
+                        "status": "new",
+                        "assigned_agent_id": None,
+                        "result": None,
+                        "history": "", # Will be set properly on assignment
+                        "watching_uis": set()
+                    }
                     await broadcast_to_ui(get_current_state())
                     await assign_task_if_possible() # Try assigning immediately
                 else:
                     print("Add task request missing description.")
-
+            
+            elif command == "get_progress":
+                task_id = payload.get("task_id")
+                if task_id in tasks:
+                    # Ensure watching_uis set exists
+                    if 'watching_uis' not in tasks[task_id]: tasks[task_id]['watching_uis'] = set()
+                    # Add this UI to the watchers for this task
+                    tasks[task_id]['watching_uis'].add(websocket)
+                    print(f"UI client {websocket.client} started watching task {task_id}")
+                    # Send the full current history back to the requesting UI only
+                    history = tasks[task_id].get('history', f"History not available for task {task_id}.")
+                    await websocket.send_json({
+                        "type": "task_progress_full",
+                        "payload": {"task_id": task_id, "history": history}
+                    })
+                else:
+                    print(f"UI requested progress for unknown task: {task_id}")
+                    # Optionally send an error back to the UI
+                    await websocket.send_json({
+                        "type": "error",
+                        "payload": {"message": f"Task {task_id} not found."}
+                    })
             else:
                 print(f"Unknown command from UI: {command}")
 
     except WebSocketDisconnect:
-        print("UI client disconnected.")
+        print(f"UI client {websocket.client} disconnected.")
     except Exception as e:
         print(f"Error in UI websocket: {e}")
     finally:
+        # Remove UI from general list and any task watching sets
         if websocket in ui_connections:
             ui_connections.remove(websocket)
+        for task_id in tasks:
+            if 'watching_uis' in tasks[task_id] and websocket in tasks[task_id]['watching_uis']:
+                tasks[task_id]['watching_uis'].remove(websocket)
+                print(f"Removed disconnected UI {websocket.client} from watching task {task_id}")
 
 
 # --- Process Monitoring ---
@@ -299,12 +366,40 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
                     tasks[task_id]["result"] = result
                     tasks[task_id]["status"] = status
                     tasks[task_id]["assigned_agent_id"] = None # Unassign
+                    tasks[task_id]["watching_uis"] = set() # Clear watchers on completion/failure
                     agents[agent_id]["status"] = "idle" # Agent becomes idle
-                    print(f"Task {task_id} finished by agent {agent_id} with status: {status}")
-                    await broadcast_to_ui(get_current_state())
+                    print(f"Task {task_id} finished by agent {agent_id} with status: {status}. Cleared watchers.")
+                    await broadcast_to_ui(get_current_state()) # Broadcast general state
                     await assign_task_if_possible() # Check for next task
                 else:
                     print(f"Received result for unknown task ID: {task_id}")
+
+            elif message_type == "progress_update":
+                task_id = payload.get("task_id")
+                token = payload.get("token")
+                if task_id in tasks and token is not None:
+                    if 'history' not in tasks[task_id]:
+                        tasks[task_id]['history'] = "" # Initialize if missing (edge case)
+                        print(f"Warning: Initialized missing history for task {task_id} during progress update.")
+
+                    # Check if this is the first assistant token for this task history
+                    # If history only contains 'user|||...', add the separator
+                    if tasks[task_id]['history'].count('|||') < 2:
+                        tasks[task_id]['history'] += "|||" # Correctly indented line
+
+                    tasks[task_id]['history'] += token # Correctly indented line
+
+                    # Broadcast the token delta ONLY to UIs watching this task
+                    delta_message = {
+                        "type": "task_progress_delta",
+                        "payload": {"task_id": task_id, "token": token}
+                    }
+                    # Use create_task to avoid blocking the agent message loop
+                    asyncio.create_task(broadcast_delta_to_watching_uis(task_id, delta_message))
+
+                elif task_id not in tasks:
+                    print(f"Warning: Received progress update for unknown task {task_id}.")
+                # Ignore if token is None
 
             else:
                 print(f"Unknown message type from agent {agent_id}: {message_type}")
