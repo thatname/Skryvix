@@ -5,15 +5,19 @@
         <link rel="stylesheet" href="/static/style.css">
     </head>
     <body>
-        <div class="panel">
-            <h2>Agent Manager</h2>
-            <button id="spawnAgent">Spawn New Agent</button>
+        <div class="controls">
+             <button id="toggleLayout">Toggle Layout (Vertical/Horizontal)</button>
+        </div>
+        <div id="mainContainer" class="layout-horizontal"> <!-- Default to horizontal -->
+            <div class="panel">
+                <h2>Agent Manager</h2>
+                <button id="spawnAgent">Spawn New Agent</button>
             <h3>Active Agents</h3>
             <ul id="agentList" class="agent-list"></ul>
         </div>
         <div class="panel">
             <h2>Task Management</h2>
-            <input type="text" id="taskDesc" placeholder="Enter new task description">
+            <textarea id="taskDesc" placeholder="Enter new task description" rows="3"></textarea>
             <button id="addTask">Add Task</button>
             <h3>New Tasks</h3>
             <ul id="newTasks" class="task-list"></ul>
@@ -27,8 +31,9 @@
             <h2>Task Progress/History</h2>
             <button id="closeProgressPanel" style="float: right;">Close</button>
             <h3 id="progressTaskId">Task ID: N/A</h3>
-            <pre id="progressContent">Loading...</pre>
-        </div>
+                <pre id="progressContent">Loading...</pre>
+            </div>
+        </div> <!-- Close mainContainer -->
 
         <script src="/static/script.js"></script>
     </body>

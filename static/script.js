@@ -10,6 +10,8 @@ const progressPanel = document.getElementById('progressPanel');
 const progressTaskId = document.getElementById('progressTaskId');
 const progressContent = document.getElementById('progressContent');
 const closeProgressPanel = document.getElementById('closeProgressPanel');
+const toggleLayoutBtn = document.getElementById('toggleLayout'); // Added
+const mainContainer = document.getElementById('mainContainer'); // Added
 
 // --- WebSocket Setup ---
 const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -232,6 +234,17 @@ function updateProgressPanelDelta(payload) {
 closeProgressPanel.onclick = () => {
     progressPanel.style.display = 'none';
     // Optional: Send a message to server to stop watching? Not implemented server-side yet.
+};
+
+// --- Layout Toggle Logic ---
+toggleLayoutBtn.onclick = () => {
+    if (mainContainer.classList.contains('layout-horizontal')) {
+        mainContainer.classList.remove('layout-horizontal');
+        mainContainer.classList.add('layout-vertical');
+    } else {
+        mainContainer.classList.remove('layout-vertical');
+        mainContainer.classList.add('layout-horizontal');
+    }
 };
 
 
