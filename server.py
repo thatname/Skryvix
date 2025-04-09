@@ -12,7 +12,7 @@ import asyncio.subprocess as subprocess # Added for process management
 
 # --- Configuration ---
 AGENT_CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH", "agent.yaml") # Default config path
-AGENT_SCRIPT_PATH = "agent_runner.py" # Script to run for each agent
+AGENT_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "agent_runner.py") # Script to run for each agent
 AGENT_WORKDIR_BASE = os.getenv("AGENT_WORKDIR_BASE", "agent_workspaces") # Base directory for agent working directories
 
 AGENT_CONFIG_DIR = 'agent_configs'
