@@ -13,6 +13,7 @@ import asyncio.subprocess as subprocess # Added for process management
 # --- Configuration ---
 AGENT_CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH", "agent.yaml") # Default config path
 AGENT_SCRIPT_PATH = "agent_runner.py" # Script to run for each agent
+AGENT_WORKDIR_BASE = os.getenv("AGENT_WORKDIR_BASE", "agent_workspaces") # Base directory for agent working directories
 
 AGENT_CONFIG_DIR = 'agent_configs'
 available_agent_configs = []
@@ -34,7 +35,7 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # --- State Management ---
-# Store agent information: {agent_id: {"id": agent_id, "process": process_handle, "status": "idle/busy/starting/terminating/error", "websocket": websocket}}
+# Store agent information: {agent_id: {"id": agent_id, "process": process_handle, "status": "idle/busy/starting/terminating/error", "websocket": websocket, "workdir": str}}
 agents: Dict[str, Dict[str, Any]] = {}
 # Store task information: {task_id: {"id": task_id, "description": desc, "status": "new/running/completed/failed", "assigned_agent_id": agent_id, "result": result, "history": str, "watching_uis": set[WebSocket]}}
 tasks: Dict[str, Dict[str, Any]] = {}
@@ -172,6 +173,11 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                     # In production, might need request.base_url or config.
                     server_ws_url = "ws://localhost:8000" # Adjust as needed
 
+                    # Create agent work directory
+                    workdir = os.path.join(AGENT_WORKDIR_BASE, agent_id)
+                    os.makedirs(workdir, exist_ok=True)
+                    agents[agent_id]["workdir"] = workdir
+
                     # Command to run the agent runner script
                     config_filename = payload.get("config", "example_agent.yaml")
                     config_dir_path = os.path.join(os.path.dirname(__file__), AGENT_CONFIG_DIR)
@@ -186,11 +192,12 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                     ]
                     print(f"Spawning agent {agent_id} with command: {' '.join(cmd)}")
 
-                    # Spawn the process
+                    # Spawn the process with working directory set
                     process = await asyncio.create_subprocess_exec(
                         *cmd,
                         stdout=subprocess.PIPE, # Capture stdout
-                        stderr=subprocess.PIPE  # Capture stderr
+                        stderr=subprocess.PIPE, # Capture stderr
+                        cwd=workdir # Set the working directory for the process
                     )
                     agents[agent_id]["process"] = process
                     print(f"Agent {agent_id} process started with PID: {process.pid}")
@@ -334,6 +341,16 @@ async def monitor_process_exit(agent_id: str, process):
 
     # Clean up agent state
     if agent_id in agents:
+        # Clean up work directory
+        if "workdir" in agents[agent_id]:
+            workdir = agents[agent_id]["workdir"]
+            try:
+                import shutil
+                shutil.rmtree(workdir)
+                print(f"Cleaned up work directory for agent {agent_id}: {workdir}")
+            except Exception as e:
+                print(f"Error cleaning up work directory for agent {agent_id}: {e}")
+
         # Update status if not already terminating (e.g., crashed)
         if agents[agent_id]["status"] != "terminating":
              agents[agent_id]["status"] = "exited_unexpectedly" if return_code != 0 else "exited_normally"
