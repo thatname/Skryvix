@@ -12,7 +12,6 @@ from typing import Dict, List, Any, Optional
 import asyncio.subprocess as subprocess # Added for process management
 
 # --- Configuration ---
-AGENT_CONFIG_PATH = os.getenv("AGENT_CONFIG_PATH", "agent.yaml") # Default config path
 AGENT_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "agent_runner.py") # Script to run for each agent
 AGENT_WORKDIR_BASE = os.getenv("AGENT_WORKDIR_BASE", "agent_workspaces") # Base directory for agent working directories
 
@@ -758,11 +757,4 @@ async def shutdown_event():
 if __name__ == "__main__":
     import uvicorn
     print("Starting Agent Manager Server...")
-    # Ensure AGENT_CONFIG_PATH exists or provide guidance
-    if not os.path.exists(AGENT_CONFIG_PATH):
-         print(f"Warning: Default agent config file '{AGENT_CONFIG_PATH}' not found.")
-         print("Ensure the config file exists or set the AGENT_CONFIG_PATH environment variable.")
-         # Optionally exit if config is critical for startup
-         # sys.exit(f"Error: Agent config file '{AGENT_CONFIG_PATH}' not found.")
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
