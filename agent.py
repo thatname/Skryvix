@@ -123,7 +123,7 @@ class Agent:
                                                or (None, None) if no tool call found
         """
         # Match XML-style tool calls
-        tool_pattern = r'```(.*?)\n(.*?)```'
+        tool_pattern = r'```(.*?)\n(.*?)```\n'
         match = re.search(tool_pattern, content, re.DOTALL)
         if match:
             tool_name = match.group(1).strip()
@@ -163,7 +163,7 @@ class Agent:
                 yield token
             
             #if buffer.endswith("`"):
-            result = await self._process_tool_call(buffer)
+            result = await self._process_tool_call(buffer + '```\n')
             if result:
                 prompt = result
                 yield "\n|||\n" + prompt + "\n|||\n"
