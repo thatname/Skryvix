@@ -20,10 +20,16 @@
             <h2>Task Management</h2>
             <textarea id="taskDesc" placeholder="Enter new task description" rows="3"></textarea>
             <button id="addTask">Add Task</button>
+            <div class="mode-switch" style="margin-bottom: 10px; margin-top: 10px;">
+                <label for="autoModeSwitch">Auto Assign Tasks:</label>
+                <input type="checkbox" id="autoModeSwitch" checked>
+            </div>
             <h3>New Tasks</h3>
             <ul id="newTasks" class="task-list"></ul>
             <h3>Running Tasks</h3>
             <ul id="runningTasks" class="task-list"></ul>
+            <h3>Incomplete Tasks</h3>
+            <ul id="incompleteTasks" class="task-list"></ul>
             <h3>Completed Tasks</h3>
             <ul id="completedTasks" class="task-list"></ul>
         </div>
