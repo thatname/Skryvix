@@ -237,7 +237,7 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                         try:
                             process.send_signal(signal.SIGTERM)
                             agents[agent_id]["status"] = "stopped"
-                            print(f"Agent {agent_id} process {process.pid} stopped")
+                            print(f"Agent {agent_id} process {process.pid} stopped (SIGINT)")
                         except Exception as e:
                             print(f"Error stopping agent {agent_id}: {e}")
                             agents[agent_id]["status"] = "error"
@@ -246,42 +246,52 @@ async def websocket_ui_endpoint(websocket: WebSocket):
 
             elif command == "terminate_agent":
                 agent_id = payload.get("agent_id")
-                if agent_id in agents and agents[agent_id].get("process"):
+                if agent_id in agents:
                     print(f"UI requested to terminate agent {agent_id}")
                     agents[agent_id]["status"] = "terminating"
-                    await broadcast_to_ui(get_current_state()) # Update UI
+                    await broadcast_to_ui(get_current_state())
 
-                    process = agents[agent_id]["process"]
-                    if process.returncode is None: # Check if process is still running
+                    process = agents[agent_id].get("process")
+                    if process and process.returncode is None:
+                        # First try to stop if running/idle
+                        if agents[agent_id]["status"] in ["idle", "running"]:
+                            try:
+                                process.send_signal(signal.SIGTERM)
+                                print(f"Stopped agent {agent_id} process {process.pid} before termination")
+                            except Exception as e:
+                                print(f"Error stopping agent {agent_id} before termination: {e}")
+
+                        # Then terminate
                         print(f"Terminating agent process {process.pid} for agent {agent_id}...")
                         try:
-                            process.terminate() # Send SIGTERM
-                            # Wait briefly for graceful shutdown
+                            process.terminate()
                             try:
                                 await asyncio.wait_for(process.wait(), timeout=5.0)
                                 print(f"Agent process {process.pid} terminated gracefully.")
                             except asyncio.TimeoutError:
-                                print(f"Agent process {process.pid} did not terminate gracefully, sending SIGKILL...")
-                                process.kill() # Force kill if terminate fails
-                                await process.wait() # Wait for kill to complete
+                                process.kill()
+                                await process.wait()
                                 print(f"Agent process {process.pid} killed.")
                         except ProcessLookupError:
-                             print(f"Process {process.pid} already exited.")
+                            print(f"Process {process.pid} already exited.")
                         except Exception as e:
-                            print(f"Error during termination of agent {agent_id} (PID {process.pid}): {e}")
-                            # Attempt to kill again if error occurred during terminate
-                            try:
-                                if process.returncode is None:
-                                    process.kill()
-                                    await process.wait()
-                            except Exception as kill_e:
-                                print(f"Error during kill attempt for agent {agent_id}: {kill_e}")
+                            print(f"Error terminating agent {agent_id}: {e}")
 
-                    else:
-                        print(f"Agent process for {agent_id} already exited with code {process.returncode}.")
+                    # Clean up work directory
+                    if "workdir" in agents[agent_id]:
+                        workdir = agents[agent_id]["workdir"]
+                        try:
+                            import shutil
+                            shutil.rmtree(workdir)
+                            print(f"Deleted work directory for agent {agent_id}: {workdir}")
+                        except Exception as e:
+                            print(f"Error deleting work directory for agent {agent_id}: {e}")
 
-                    # Final cleanup handled by monitor_process_exit or websocket disconnect
-                    # We just mark as terminating here. The monitor task will remove it.
+                    # Remove agent entry
+                    del agents[agent_id]
+                    if agent_id in agent_connections:
+                        del agent_connections[agent_id]
+                    await broadcast_to_ui(get_current_state())
                 elif agent_id in agents:
                      print(f"Terminate request for agent {agent_id} but process not found or already exited.")
                      # Clean up if agent exists but process doesn't
@@ -370,31 +380,6 @@ async def monitor_process_exit(agent_id: str, process):
 
     # Clean up agent state
     if agent_id in agents:
-        # Clean up work directory
-        if "workdir" in agents[agent_id]:
-            workdir = agents[agent_id]["workdir"]
-            try:
-                import shutil
-                shutil.rmtree(workdir)
-                print(f"Cleaned up work directory for agent {agent_id}: {workdir}")
-            except Exception as e:
-                print(f"Error cleaning up work directory for agent {agent_id}: {e}")
-
-        # Update status if not already terminating (e.g., crashed)
-        if agents[agent_id]["status"] != "terminating":
-             agents[agent_id]["status"] = "exited_unexpectedly" if return_code != 0 else "exited_normally"
-        agents[agent_id]["process"] = None # Remove process handle
-
-        # If status is terminating, remove the agent entry completely after exit
-        if agents[agent_id]["status"] == "terminating":
-            print(f"Removing terminated agent {agent_id} from registry.")
-            del agents[agent_id]
-            if agent_id in agent_connections: # Should be cleaned by websocket disconnect, but double-check
-                del agent_connections[agent_id]
-        else:
-             # Keep the entry but mark status if it exited unexpectedly
-             print(f"Agent {agent_id} marked as exited with status: {agents[agent_id]['status']}")
-
         await broadcast_to_ui(get_current_state()) # Update UI about the exit/removal
     else:
         print(f"Agent {agent_id} (PID {process.pid}) exited but was already removed from registry.")
@@ -493,8 +478,7 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
             del agent_connections[agent_id]
         if agent_id in agents:
             # Keep agent entry but mark as disconnected/error unless explicitly terminated
-            if agents[agent_id]["status"] != "terminating":
-                 agents[agent_id]["status"] = "disconnected_error"
+            agents[agent_id]["status"] = "disconnected_error"
             agents[agent_id]["websocket"] = None # Remove websocket object
             print(f"Cleaned up connection for agent {agent_id}. Status: {agents[agent_id]['status']}")
         await broadcast_to_ui(get_current_state())
