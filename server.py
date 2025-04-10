@@ -345,7 +345,7 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                         if process.returncode is None:
                             try:
                                 # Send SIGINT (Ctrl+C equivalent) first for graceful shutdown
-                                process.send_signal(signal.SIGTERM)
+                                process.terminate()
                                 print(f"Sent SIGTERM to agent {agent_id} process {process.pid}")
                                 # Monitor_process_exit will handle the state change to 'stopped' or 'error'
                             except ProcessLookupError:
@@ -562,10 +562,9 @@ async def monitor_process_exit(agent_id: str, process):
         await broadcast_to_ui(get_current_state())
         return # Exit early, termination handles cleanup
     elif agent_current_status == 'stopping':
-        final_agent_state = 'stopped' # Expected outcome
-        if return_code != 0:
-             print(f"Agent {agent_id} exited with error code {return_code} during stopping.")
-             final_agent_state = 'error' # Unexpected error during stop
+        # For stopping state, exit code 1 is expected (SIGTERM)
+        final_agent_state = 'stopped'
+        print(f"Agent {agent_id} stopped normally (exit code {return_code})")
     elif return_code != 0:
         final_agent_state = 'error' # Process crashed or exited unexpectedly
 

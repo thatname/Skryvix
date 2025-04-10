@@ -57,29 +57,25 @@ class Agent:
             except (ImportError, AttributeError) as e:
                 raise ImportError(f"Failed to load tool {tool_info['class']}: {str(e)}")
 
-        # Read prompt templates
+        # Read system prompt template
         try:
             with open(config_path.parent / config['system_prompt_template'], 'r', encoding='utf-8') as f:
                 system_prompt_template = f.read()
-            with open(config_path.parent / config['user_prompt_template'], 'r', encoding='utf-8') as f:
-                user_prompt_template = f.read()
         except FileNotFoundError as e:
-            raise FileNotFoundError(f"Prompt template file not found: {str(e)}")
+            raise FileNotFoundError(f"System prompt template file not found: {str(e)}")
 
         # Create Agent instance
         return cls(
             chat_streamer=chat_streamer,
             tools=tools,
-            system_prompt_template=system_prompt_template,
-            user_prompt_template=user_prompt_template
+            system_prompt_template=system_prompt_template
         )
 
     def __init__(
         self,
         chat_streamer: ChatStreamer,
         tools: List[Tool],
-        system_prompt_template: str,
-        user_prompt_template: str
+        system_prompt_template: str
     ):
         """
         Initialize Agent
@@ -88,12 +84,10 @@ class Agent:
             chat_streamer (ChatStreamer): Instance of ChatStreamer for communication
             tools (List[Tool]): List of available tools
             system_prompt_template (str): Jinja2 template for system prompt
-            user_prompt_template (str): Jinja2 template for user prompt
         """
         self.chat_streamer = chat_streamer
         self.tools = tools
         self.system_prompt_template = Template(system_prompt_template)
-        self.user_prompt_template = Template(user_prompt_template)
         
         # Create tool name to tool instance mapping
         self.tool_map = {tool.name(): tool for tool in tools}
@@ -107,9 +101,9 @@ class Agent:
         
     def _prepare_user_prompt(self, task: str) -> str:
         """
-        Prepare user prompt using template and task
+        Prepare user prompt with direct task
         """
-        return self.user_prompt_template.render(task=task)
+        return task
     
     async def _process_tool_call(self, content: str) -> Tuple[Optional[str], Optional[str]]:
         """
