@@ -1,8 +1,8 @@
 // --- DOM Elements ---
 const agentList = document.getElementById('agentList');
-const newTasksList = document.getElementById('newTasks');
+// const newTasksList = document.getElementById('newTasks'); // Removed
 const runningTasksList = document.getElementById('runningTasks');
-const incompleteTasksList = document.getElementById('incompleteTasks'); // Added
+const incompleteTasksList = document.getElementById('incompleteTasks');
 const completedTasksList = document.getElementById('completedTasks');
 const createAgentBtn = document.getElementById('createAgent');
 const addTaskBtn = document.getElementById('addTask');
@@ -33,8 +33,9 @@ function connectWebSocket() {
         console.log("UI WebSocket connected");
         // Clear any previous error messages
         agentList.innerHTML = '';
-        newTasksList.innerHTML = '';
+        // newTasksList.innerHTML = ''; // Removed
         runningTasksList.innerHTML = '';
+        incompleteTasksList.innerHTML = ''; // Clear this too on connect
         completedTasksList.innerHTML = '';
     };
 
@@ -136,13 +137,13 @@ function updateUI() {
 
 
     // Update Tasks
-    newTasksList.innerHTML = '';
+    // newTasksList.innerHTML = ''; // Removed
     runningTasksList.innerHTML = '';
-    incompleteTasksList.innerHTML = ''; // Clear new list
+    incompleteTasksList.innerHTML = '';
     completedTasksList.innerHTML = '';
     const taskIds = Object.keys(currentTasks).sort((a, b) => currentTasks[a].id.localeCompare(currentTasks[b].id)); // Sort by ID
 
-    let hasNew = false, hasRunning = false, hasIncomplete = false, hasCompleted = false; // Added hasIncomplete
+    let hasRunning = false, hasIncomplete = false, hasCompleted = false; // Removed hasNew
 
     taskIds.forEach(taskId => {
         const task = currentTasks[taskId]; // Use global state
@@ -184,7 +185,8 @@ function updateUI() {
         li.appendChild(deleteBtn);
 
         // Add Manual Assignment Controls (if applicable)
-        if (currentAssignmentMode === 'manual' && (task.status === 'new' || task.status === 'incomplete')) {
+        // Only allow assignment for 'incomplete' tasks now
+        if (currentAssignmentMode === 'manual' && task.status === 'incomplete') {
             const assignDiv = document.createElement('div');
             assignDiv.style.display = 'inline-block'; // Keep controls on same line
             assignDiv.style.marginLeft = '10px';
@@ -228,25 +230,22 @@ function updateUI() {
 
 
         // Append task to the correct list
-        if (task.status === 'new') {
-            newTasksList.appendChild(li);
-            hasNew = true;
-        } else if (task.status === 'running') {
+        if (task.status === 'running') {
             runningTasksList.appendChild(li);
             hasRunning = true;
-        } else if (task.status === 'incomplete') { // Added case
+        } else if (task.status === 'incomplete') {
             incompleteTasksList.appendChild(li);
             hasIncomplete = true;
-        } else { // completed
+        } else if (task.status === 'completed') { // Explicitly check completed
             completedTasksList.appendChild(li);
             hasCompleted = true;
         }
     });
 
     // Add placeholder if lists are empty
-    if (!hasNew) newTasksList.innerHTML = '<li>No new tasks.</li>';
+    // if (!hasNew) newTasksList.innerHTML = '<li>No new tasks.</li>'; // Removed
     if (!hasRunning) runningTasksList.innerHTML = '<li>No tasks running.</li>';
-    if (!hasIncomplete) incompleteTasksList.innerHTML = '<li>No incomplete tasks.</li>'; // Added
+    if (!hasIncomplete) incompleteTasksList.innerHTML = '<li>No incomplete tasks.</li>';
     if (!hasCompleted) completedTasksList.innerHTML = '<li>No completed tasks.</li>';
 }
 

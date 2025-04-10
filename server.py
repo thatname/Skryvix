@@ -70,10 +70,10 @@ def set_agent_state(agent_id: str, new_state: str):
 
 # Task State
 TASK_TRANSITIONS = {
-    'new': ['running', 'terminating'],
+    # 'new' state removed
     'running': ['completed', 'incomplete', 'terminating'], # Agent reports success -> completed, agent reports failure/crashes/disconnects -> incomplete
     'completed': ['terminating'],
-    'incomplete': ['running', 'terminating'], # Can be retried
+    'incomplete': ['running', 'terminating'], # Can be retried, now the initial state
     'terminating': ['terminated'] # Final state (implicitly on removal)
 }
 
@@ -197,8 +197,9 @@ async def _assign_task_to_agent(task_id: str, agent_id: str) -> bool:
     if agent['status'] != 'idle':
          print(f"Error: Agent {agent_id} is not idle (status: {agent['status']}). Cannot assign task {task_id}.")
          return False
-    if task['status'] not in ['new', 'incomplete']:
-         print(f"Error: Task {task_id} is not new or incomplete (status: {task['status']}). Cannot assign.")
+    # Only assign tasks that are 'incomplete'
+    if task['status'] != 'incomplete':
+         print(f"Error: Task {task_id} is not incomplete (status: {task['status']}). Cannot assign.")
          return False
 
     print(f"Assigning task {task_id} to agent {agent_id}")
@@ -211,7 +212,7 @@ async def _assign_task_to_agent(task_id: str, agent_id: str) -> bool:
 
         task["assigned_agent_id"] = agent_id
         # Initialize/Reset history and watchers
-        task["history"] = f"user\n|||\n{task['description']}" # Start history
+        task["history"] = f"{task['description']}\n|||\n" # Start history
         task["watching_uis"] = set()
 
         # Notify agent and UI
@@ -225,8 +226,8 @@ async def _assign_task_to_agent(task_id: str, agent_id: str) -> bool:
         set_agent_state(agent_id, "idle") # Revert agent state
         # Attempt to revert task state, check if task still exists
         if task_id in tasks:
-            original_status = 'new' if task['description'] else 'incomplete' # Best guess
-            set_task_state(task_id, original_status)
+            # Revert to 'incomplete' as it's the only valid starting state now
+            set_task_state(task_id, 'incomplete')
             tasks[task_id]["assigned_agent_id"] = None
         await broadcast_to_ui(get_current_state())
         return False
@@ -245,14 +246,12 @@ async def assign_task_if_possible():
          and data["process"].returncode is None), # Check if process is running
         None
     )
-    # Prioritize 'new' tasks, then 'incomplete' tasks for auto-assignment
-    new_task_id = next((task_id for task_id, data in tasks.items() if data.get("status") == "new"), None)
-    if not new_task_id:
-        new_task_id = next((task_id for task_id, data in tasks.items() if data.get("status") == "incomplete"), None)
+    # Find an 'incomplete' task for auto-assignment
+    incomplete_task_id = next((task_id for task_id, data in tasks.items() if data.get("status") == "incomplete"), None)
 
 
-    if idle_agent_id and new_task_id:
-        await _assign_task_to_agent(task_id=new_task_id, agent_id=idle_agent_id)
+    if idle_agent_id and incomplete_task_id:
+        await _assign_task_to_agent(task_id=incomplete_task_id, agent_id=idle_agent_id)
 
 
 # --- WebSocket Endpoints ---
@@ -298,7 +297,7 @@ async def websocket_ui_endpoint(websocket: WebSocket):
 
             elif command == "start_agent":
                 agent_id = payload.get("agent_id")
-                if agent_id in agents and agents[agent_id]["status"] in ["created", "stopped"]:
+                if agent_id in agents and agents[agent_id]["status"] in ["created", "stopped", "error"]:
                     print(f"UI requested to start agent {agent_id}")
                     set_agent_state(agent_id, "starting")
                     await broadcast_to_ui(get_current_state())
@@ -346,15 +345,15 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                         if process.returncode is None:
                             try:
                                 # Send SIGINT (Ctrl+C equivalent) first for graceful shutdown
-                                process.send_signal(signal.SIGINT)
-                                print(f"Sent SIGINT to agent {agent_id} process {process.pid}")
+                                process.send_signal(signal.SIGTERM)
+                                print(f"Sent SIGTERM to agent {agent_id} process {process.pid}")
                                 # Monitor_process_exit will handle the state change to 'stopped' or 'error'
                             except ProcessLookupError:
                                 print(f"Process {process.pid} already exited.")
                                 set_agent_state(agent_id, "stopped") # Mark as stopped if process gone
                                 await broadcast_to_ui(get_current_state())
                             except Exception as e:
-                                print(f"Error sending SIGINT to agent {agent_id}: {e}")
+                                print(f"Error sending SIGTERM to agent {agent_id}: {e}")
                                 set_agent_state(agent_id, "error") # Mark agent as error if signal fails
                                 await broadcast_to_ui(get_current_state())
                     else:
@@ -428,7 +427,7 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                     tasks[task_id] = {
                         "id": task_id,
                         "description": task_desc,
-                        "status": "new", # Initial state
+                        "status": "incomplete", # Initial state is now incomplete
                         "assigned_agent_id": None,
                         "result": None,
                         "history": "",
@@ -661,11 +660,6 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
                     if 'history' not in tasks[task_id]:
                         tasks[task_id]['history'] = "" # Initialize if missing (edge case)
                         print(f"Warning: Initialized missing history for task {task_id} during progress update.")
-
-                    # Check if this is the first assistant token for this task history
-                    # If history only contains 'user\n|||\n...', add the separator
-                    if tasks[task_id]['history'].count('\n|||\n') < 2:
-                        tasks[task_id]['history'] += "\n|||\n" # Correctly indented line
 
                     tasks[task_id]['history'] += token # Correctly indented line
 
