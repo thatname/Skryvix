@@ -91,7 +91,7 @@ function updateUI(agents, tasks) {
 
             // Terminate Button (only if not terminating/exited)
             // Add action buttons based on agent status
-            if (agent.status === 'created') {
+            if (['created', 'stopped'].includes(agent.status)) {
                 const startBtn = document.createElement('button');
                 startBtn.textContent = 'Start';
                 startBtn.onclick = (e) => {
@@ -99,7 +99,7 @@ function updateUI(agents, tasks) {
                     startAgent(agentId);
                 };
                 li.appendChild(startBtn);
-            } else if (agent.status === 'running') {
+            } else if (!['terminating', 'exited_unexpectedly', 'exited_normally'].includes(agent.status)) {
                 const stopBtn = document.createElement('button');
                 stopBtn.textContent = 'Stop';
                 stopBtn.onclick = (e) => {

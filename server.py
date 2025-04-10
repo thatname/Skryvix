@@ -187,7 +187,7 @@ async def websocket_ui_endpoint(websocket: WebSocket):
 
             elif command == "start_agent":
                 agent_id = payload.get("agent_id")
-                if agent_id in agents and agents[agent_id]["status"] == "created":
+                if agent_id in agents and agents[agent_id]["status"] in ["created", "stopped"]:
                     print(f"UI requested to start agent {agent_id}")
                     agents[agent_id]["status"] = "starting"
                     await broadcast_to_ui(get_current_state())
@@ -235,7 +235,7 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                     process = agents[agent_id]["process"]
                     if process.returncode is None:
                         try:
-                            process.send_signal(signal.SIGSTOP)
+                            process.send_signal(signal.SIGTERM)
                             agents[agent_id]["status"] = "stopped"
                             print(f"Agent {agent_id} process {process.pid} stopped")
                         except Exception as e:
