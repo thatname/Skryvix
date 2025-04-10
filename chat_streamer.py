@@ -163,19 +163,19 @@ class ChatStreamer:
         self,
         message
     ):
-
-        self.history.append({"role": "user", "content": message})
-
-        # Build messages and parameters
-        params = self._build_completion_params()
-        params["messages"] = self.history
-
-        # Create streaming response
-        stream = await self.client.chat.completions.create(**params)
-        
-        self.history.append({"role": "assistant", "content": ""})
-
         try:
+            self.history.append({"role": "user", "content": message})
+
+            # Build messages and parameters
+            params = self._build_completion_params()
+            params["messages"] = self.history
+
+            # Create streaming response
+            stream = await self.client.chat.completions.create(**params)
+            
+            self.history.append({"role": "assistant", "content": ""})
+
+        
             # Process response token by token
             async for chunk in stream:
                 if chunk.choices[0].delta.content is not None:
@@ -184,4 +184,4 @@ class ChatStreamer:
                     yield content
 
         except Exception as e:
-            raise
+            yield f"Exception :{e}"

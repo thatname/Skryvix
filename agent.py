@@ -164,3 +164,5 @@ class Agent:
 
             else:
                 break
+        
+        print(buffer)

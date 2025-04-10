@@ -41,12 +41,11 @@ state_lock = Lock()
 # Agent State
 AGENT_TRANSITIONS = {
     'created': ['starting', 'terminating'],
-    'starting': ['idle', 'error', 'terminating'],
+    'starting': ['idle', 'terminating'],
     'idle': ['busy', 'stopping', 'terminating'],
-    'busy': ['idle', 'stopping', 'error', 'terminating'], # Agent reports completion/failure -> idle, external stop -> stopping, crash -> error
-    'stopping': ['stopped', 'error', 'terminating'],
+    'busy': ['idle', 'stopping', 'terminating'], # Agent reports completion/failure -> idle, external stop -> stopping
+    'stopping': ['stopped', 'terminating'],
     'stopped': ['starting', 'terminating'],
-    'error': ['starting', 'terminating'], # Can retry from error
     'terminating': ['terminated'] # Final state (implicitly on removal)
 }
 
@@ -100,7 +99,7 @@ def set_task_state(task_id: str, new_state: str):
         print(f"Task {task_id} state changed: {old_state} -> {new_state}") # Added logging
         return True
 
-# Store agent information: {agent_id: {"id": agent_id, "process": process_handle, "status": "idle/busy/starting/stopping/stopped/error/terminating", "websocket": websocket, "workdir": str, "config_path": str}}
+# Store agent information: {agent_id: {"id": agent_id, "process": process_handle, "status": "idle/busy/starting/stopping/stopped/terminating", "websocket": websocket, "workdir": str, "config_path": str}}
 agents: Dict[str, Dict[str, Any]] = {}
 # Store task information: {task_id: {"id": task_id, "description": desc, "status": "new/running/completed/incomplete", "assigned_agent_id": agent_id | None, "result": result | None, "history": str, "watching_uis": set[WebSocket]}}
 tasks: Dict[str, Dict[str, Any]] = {}
@@ -191,7 +190,7 @@ async def _assign_task_to_agent(task_id: str, agent_id: str) -> bool:
 
     if not agent_ws:
          print(f"Agent {agent_id} websocket not found for task assignment.")
-         set_agent_state(agent_id, "error")
+         set_agent_state(agent_id, "stopped")
          await broadcast_to_ui(get_current_state())
          return False
     if agent['status'] != 'idle':
@@ -297,7 +296,7 @@ async def websocket_ui_endpoint(websocket: WebSocket):
 
             elif command == "start_agent":
                 agent_id = payload.get("agent_id")
-                if agent_id in agents and agents[agent_id]["status"] in ["created", "stopped", "error"]:
+                if agent_id in agents and agents[agent_id]["status"] in ["created", "stopped"]:
                     print(f"UI requested to start agent {agent_id}")
                     set_agent_state(agent_id, "starting")
                     await broadcast_to_ui(get_current_state())
@@ -331,7 +330,7 @@ async def websocket_ui_endpoint(websocket: WebSocket):
 
                     except Exception as e:
                         print(f"Failed to start agent {agent_id}: {e}") # Indentation fixed here
-                        set_agent_state(agent_id, "error") # Use setter
+                        set_agent_state(agent_id, "stopped") # Use setter
                         agents[agent_id]["process"] = None
                         await broadcast_to_ui(get_current_state())
 
@@ -347,14 +346,14 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                                 # Send SIGINT (Ctrl+C equivalent) first for graceful shutdown
                                 process.terminate()
                                 print(f"Sent SIGTERM to agent {agent_id} process {process.pid}")
-                                # Monitor_process_exit will handle the state change to 'stopped' or 'error'
+                                # Monitor_process_exit will handle the state change to 'stopped'
                             except ProcessLookupError:
                                 print(f"Process {process.pid} already exited.")
                                 set_agent_state(agent_id, "stopped") # Mark as stopped if process gone
                                 await broadcast_to_ui(get_current_state())
                             except Exception as e:
                                 print(f"Error sending SIGTERM to agent {agent_id}: {e}")
-                                set_agent_state(agent_id, "error") # Mark agent as error if signal fails
+                                set_agent_state(agent_id, "stopped") # Mark agent as stopped if signal fails
                                 await broadcast_to_ui(get_current_state())
                     else:
                          print(f"Agent {agent_id} process already exited.")
@@ -566,13 +565,13 @@ async def monitor_process_exit(agent_id: str, process):
         final_agent_state = 'stopped'
         print(f"Agent {agent_id} stopped normally (exit code {return_code})")
     elif return_code != 0:
-        final_agent_state = 'error' # Process crashed or exited unexpectedly
+        final_agent_state = 'stopped' # Process crashed or exited unexpectedly
 
     # Set final agent state
     set_agent_state(agent_id, final_agent_state)
 
     # If agent was busy and didn't exit cleanly, mark task as incomplete
-    if agent_current_status == 'busy' and final_agent_state == 'error':
+    if agent_current_status == 'busy' and return_code != 0:
         task_id_to_incomplete = next((tid for tid, tdata in tasks.items() if tdata.get("assigned_agent_id") == agent_id), None)
         if task_id_to_incomplete:
             print(f"Marking task {task_id_to_incomplete} as incomplete due to agent {agent_id} error exit.")
@@ -607,8 +606,8 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
     if agents[agent_id]["status"] == "starting":
         set_agent_state(agent_id, "idle")
     else:
-        # If agent reconnects unexpectedly (e.g. after error), reset to idle if possible
-        if agents[agent_id]["status"] in ['error', 'stopped']:
+        # If agent reconnects unexpectedly (e.g. after being stopped), reset to idle if possible
+        if agents[agent_id]["status"] == 'stopped':
              print(f"Agent {agent_id} reconnected with status {agents[agent_id]['status']}, setting to idle.")
              set_agent_state(agent_id, "idle")
         else:
@@ -686,9 +685,9 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
         print(f"Agent {agent_id} websocket handler closing.")
         original_status = agents[agent_id]['status'] if agent_id in agents else 'unknown'
 
-        # Mark agent as error on unexpected disconnect, unless terminating/stopping
+        # Mark agent as stopped on unexpected disconnect, unless terminating/stopping
         if agent_id in agents and agents[agent_id]['status'] not in ['terminating', 'stopping', 'stopped']:
-             set_agent_state(agent_id, "error")
+             set_agent_state(agent_id, "stopped")
 
         # If agent was busy, mark its task as incomplete
         if original_status == 'busy':
