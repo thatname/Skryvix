@@ -3,7 +3,7 @@ const agentList = document.getElementById('agentList');
 const newTasksList = document.getElementById('newTasks');
 const runningTasksList = document.getElementById('runningTasks');
 const completedTasksList = document.getElementById('completedTasks');
-const spawnAgentBtn = document.getElementById('spawnAgent');
+const createAgentBtn = document.getElementById('createAgent');
 const addTaskBtn = document.getElementById('addTask');
 const taskDescInput = document.getElementById('taskDesc');
 const progressPanel = document.getElementById('progressPanel');
@@ -90,11 +90,30 @@ function updateUI(agents, tasks) {
             li.appendChild(infoSpan);
 
             // Terminate Button (only if not terminating/exited)
+            // Add action buttons based on agent status
+            if (agent.status === 'created') {
+                const startBtn = document.createElement('button');
+                startBtn.textContent = 'Start';
+                startBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    startAgent(agentId);
+                };
+                li.appendChild(startBtn);
+            } else if (agent.status === 'running') {
+                const stopBtn = document.createElement('button');
+                stopBtn.textContent = 'Stop';
+                stopBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    stopAgent(agentId);
+                };
+                li.appendChild(stopBtn);
+            }
+
             if (!['terminating', 'exited_unexpectedly', 'exited_normally'].includes(agent.status)) {
                 const terminateBtn = document.createElement('button');
                 terminateBtn.textContent = 'Terminate';
                 terminateBtn.onclick = (e) => {
-                    e.stopPropagation(); // Prevent potential li click events
+                    e.stopPropagation();
                     terminateAgent(agentId);
                 };
                 li.appendChild(terminateBtn);
@@ -176,11 +195,21 @@ window.onload = async () => {
 };
 
 // --- Event Handlers ---
-spawnAgentBtn.onclick = () => {
+createAgentBtn.onclick = () => {
     const config = document.getElementById('config-select').value;
-    console.log("Requesting agent spawn with config:", config);
-    sendWsCommand({ command: 'spawn_agent', payload: { config: config } });
+    console.log("Requesting agent creation with config:", config);
+    sendWsCommand({ command: 'create_agent', payload: { config: config } });
 };
+
+function startAgent(agentId) {
+    console.log("Requesting start for agent:", agentId);
+    sendWsCommand({ command: 'start_agent', payload: { agent_id: agentId } });
+}
+
+function stopAgent(agentId) {
+    console.log("Requesting stop for agent:", agentId);
+    sendWsCommand({ command: 'stop_agent', payload: { agent_id: agentId } });
+}
 
 addTaskBtn.onclick = () => {
     const description = taskDescInput.value.trim();

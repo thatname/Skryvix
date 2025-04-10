@@ -161,58 +161,87 @@ async def websocket_ui_endpoint(websocket: WebSocket):
             command = data.get("command")
             payload = data.get("payload", {})
 
-            if command == "spawn_agent":
+            if command == "create_agent":
                 agent_id = str(uuid.uuid4())
-                print(f"UI requested to spawn agent {agent_id}")
-                agents[agent_id] = {"id": agent_id, "process": None, "status": "starting", "websocket": None}
-                await broadcast_to_ui(get_current_state()) # Update UI immediately
+                print(f"UI requested to create agent {agent_id}")
+                
+                # Create agent work directory
+                workdir = os.path.join(AGENT_WORKDIR_BASE, agent_id)
+                os.makedirs(workdir, exist_ok=True)
+                
+                # Store agent config path
+                config_filename = payload.get("config", "example_agent.yaml")
+                config_dir_path = os.path.join(os.path.dirname(__file__), AGENT_CONFIG_DIR)
+                config_path = os.path.join(config_dir_path, config_filename)
+                
+                # Initialize agent with 'created' status
+                agents[agent_id] = {
+                    "id": agent_id,
+                    "process": None,
+                    "status": "created",
+                    "websocket": None,
+                    "workdir": workdir,
+                    "config_path": config_path
+                }
+                await broadcast_to_ui(get_current_state())
 
-                try:
-                    # Determine server URL (adjust if running behind proxy etc.)
-                    # For simplicity, assuming localhost for now.
-                    # In production, might need request.base_url or config.
-                    server_ws_url = "ws://localhost:8000" # Adjust as needed
-
-                    # Create agent work directory
-                    workdir = os.path.join(AGENT_WORKDIR_BASE, agent_id)
-                    os.makedirs(workdir, exist_ok=True)
-                    agents[agent_id]["workdir"] = workdir
-
-                    # Command to run the agent runner script
-                    config_filename = payload.get("config", "example_agent.yaml")
-                    config_dir_path = os.path.join(os.path.dirname(__file__), AGENT_CONFIG_DIR)
-                    config_path = os.path.join(config_dir_path, config_filename)
-                    
-                    cmd = [
-                        sys.executable, # Use the same Python interpreter
-                        AGENT_SCRIPT_PATH,
-                        "--agent-id", agent_id,
-                        "--server-url", server_ws_url,
-                        "--config-path", config_path
-                    ]
-                    print(f"Spawning agent {agent_id} with command: {' '.join(cmd)}")
-
-                    # Spawn the process with working directory set
-                    process = await asyncio.create_subprocess_exec(
-                        *cmd,
-                        stdout=subprocess.PIPE, # Capture stdout
-                        stderr=subprocess.PIPE, # Capture stderr
-                        cwd=workdir # Set the working directory for the process
-                    )
-                    agents[agent_id]["process"] = process
-                    print(f"Agent {agent_id} process started with PID: {process.pid}")
-
-                    # Start background tasks to monitor stdout/stderr and process exit
-                    asyncio.create_task(monitor_process_output(agent_id, process.stdout, "stdout"))
-                    asyncio.create_task(monitor_process_output(agent_id, process.stderr, "stderr"))
-                    asyncio.create_task(monitor_process_exit(agent_id, process))
-
-                    # Status will be updated to 'idle' when the agent connects via WebSocket
-                except Exception as e:
-                    print(f"Failed to spawn agent {agent_id}: {e}")
-                    agents[agent_id]["status"] = "error"
-                    agents[agent_id]["process"] = None # Ensure process is None on failure
+            elif command == "start_agent":
+                agent_id = payload.get("agent_id")
+                if agent_id in agents and agents[agent_id]["status"] == "created":
+                    print(f"UI requested to start agent {agent_id}")
+                    agents[agent_id]["status"] = "starting"
                     await broadcast_to_ui(get_current_state())
+
+                    try:
+                        # Determine server URL
+                        server_ws_url = "ws://localhost:8000" # Adjust as needed
+                        
+                        cmd = [
+                            sys.executable,
+                            AGENT_SCRIPT_PATH,
+                            "--agent-id", agent_id,
+                            "--server-url", server_ws_url,
+                            "--config-path", agents[agent_id]["config_path"]
+                        ]
+                        print(f"Starting agent {agent_id} with command: {' '.join(cmd)}")
+
+                        process = await asyncio.create_subprocess_exec(
+                            *cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            cwd=agents[agent_id]["workdir"]
+                        )
+                        agents[agent_id]["process"] = process
+                        print(f"Agent {agent_id} process started with PID: {process.pid}")
+
+                        # Start monitoring tasks
+                        asyncio.create_task(monitor_process_output(agent_id, process.stdout, "stdout"))
+                        asyncio.create_task(monitor_process_output(agent_id, process.stderr, "stderr"))
+                        asyncio.create_task(monitor_process_exit(agent_id, process))
+
+                    except Exception as e:
+                        print(f"Failed to start agent {agent_id}: {e}")
+                        agents[agent_id]["status"] = "error"
+                        agents[agent_id]["process"] = None
+                        await broadcast_to_ui(get_current_state())
+
+            elif command == "stop_agent":
+                agent_id = payload.get("agent_id")
+                if agent_id in agents and agents[agent_id].get("process"):
+                    print(f"UI requested to stop agent {agent_id}")
+                    agents[agent_id]["status"] = "stopping"
+                    await broadcast_to_ui(get_current_state())
+
+                    process = agents[agent_id]["process"]
+                    if process.returncode is None:
+                        try:
+                            process.send_signal(signal.SIGSTOP)
+                            agents[agent_id]["status"] = "stopped"
+                            print(f"Agent {agent_id} process {process.pid} stopped")
+                        except Exception as e:
+                            print(f"Error stopping agent {agent_id}: {e}")
+                            agents[agent_id]["status"] = "error"
+                        await broadcast_to_ui(get_current_state())
 
 
             elif command == "terminate_agent":
@@ -382,8 +411,14 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
     await websocket.accept()
     agent_connections[agent_id] = websocket
     agents[agent_id]["websocket"] = websocket # Store websocket object
-    agents[agent_id]["status"] = "idle"
-    print(f"Agent {agent_id} connected and set to idle.")
+    
+    # Only set to idle if agent was starting (just started)
+    # Otherwise maintain current state (stopped, etc)
+    if agents[agent_id]["status"] == "starting":
+        agents[agent_id]["status"] = "idle"
+        print(f"Agent {agent_id} connected and set to idle.")
+    else:
+        print(f"Agent {agent_id} connected with status: {agents[agent_id]['status']}")
     await broadcast_to_ui(get_current_state())
     await assign_task_if_possible() # Check if tasks are waiting
 
