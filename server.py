@@ -4,6 +4,7 @@ import uuid
 import os
 import sys
 import signal
+from threading import Lock
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, FileResponse # Added FileResponse
 from fastapi.staticfiles import StaticFiles # Added StaticFiles
@@ -35,6 +36,32 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # --- State Management ---
+state_lock = Lock()
+
+def set_agent_state(agent_id: str, new_state: str):
+    """Atomically update agent state with validation"""
+    with state_lock:
+        old_state = agents[agent_id]['status']
+        if not validate_transition(old_state, new_state):
+            print(f"Invalid state transition: {old_state} -> {new_state}")
+            return False
+        agents[agent_id]['status'] = new_state
+        return True
+
+def validate_transition(old_state: str, new_state: str) -> bool:
+    """Enforce valid state transitions"""
+    transitions = {
+        'created': ['starting', 'terminating'],
+        'starting': ['idle', 'error', 'terminating'],
+        'idle': ['busy', 'stopping', 'terminating'],
+        'busy': ['idle', 'stopping', 'error', 'terminating'],
+        'stopping': ['stopped', 'error', 'terminating'],
+        'stopped': ['starting', 'terminating'],
+        'error': ['starting', 'terminating'],
+        'terminating': ['terminated']
+    }
+    return new_state in transitions.get(old_state, [])
+
 # Store agent information: {agent_id: {"id": agent_id, "process": process_handle, "status": "idle/busy/starting/terminating/error", "websocket": websocket, "workdir": str}}
 agents: Dict[str, Dict[str, Any]] = {}
 # Store task information: {task_id: {"id": task_id, "description": desc, "status": "new/running/completed/failed", "assigned_agent_id": agent_id, "result": result, "history": str, "watching_uis": set[WebSocket]}}
@@ -109,7 +136,14 @@ async def broadcast_delta_to_watching_uis(task_id: str, message: Dict[str, Any])
 
 async def assign_task_if_possible():
     """Assigns a new task to an idle agent if available."""
-    idle_agent_id = next((agent_id for agent_id, data in agents.items() if data.get("status") == "idle" and agent_id in agent_connections), None)
+    idle_agent_id = next(
+        (a_id for a_id, data in agents.items() 
+         if data.get("status") == "idle" 
+         and a_id in agent_connections
+         and data.get("process") 
+         and data["process"].returncode is None),
+        None
+    )
     new_task_id = next((task_id for task_id, data in tasks.items() if data.get("status") == "new"), None)
 
     if idle_agent_id and new_task_id:
@@ -189,7 +223,7 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                 agent_id = payload.get("agent_id")
                 if agent_id in agents and agents[agent_id]["status"] in ["created", "stopped"]:
                     print(f"UI requested to start agent {agent_id}")
-                    agents[agent_id]["status"] = "starting"
+                    set_agent_state(agent_id, "starting")
                     await broadcast_to_ui(get_current_state())
 
                     try:
@@ -229,18 +263,18 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                 agent_id = payload.get("agent_id")
                 if agent_id in agents and agents[agent_id].get("process"):
                     print(f"UI requested to stop agent {agent_id}")
-                    agents[agent_id]["status"] = "stopping"
+                    set_agent_state(agent_id, "stopping")
                     await broadcast_to_ui(get_current_state())
 
                     process = agents[agent_id]["process"]
                     if process.returncode is None:
                         try:
                             process.send_signal(signal.SIGTERM)
-                            agents[agent_id]["status"] = "stopped"
+                            set_agent_state(agent_id, "stopped")
                             print(f"Agent {agent_id} process {process.pid} stopped (SIGINT)")
                         except Exception as e:
                             print(f"Error stopping agent {agent_id}: {e}")
-                            agents[agent_id]["status"] = "error"
+                            set_agent_state(agent_id, "error")
                         await broadcast_to_ui(get_current_state())
 
 
@@ -248,7 +282,7 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                 agent_id = payload.get("agent_id")
                 if agent_id in agents:
                     print(f"UI requested to terminate agent {agent_id}")
-                    agents[agent_id]["status"] = "terminating"
+                    set_agent_state(agent_id, "terminating")
                     await broadcast_to_ui(get_current_state())
 
                     process = agents[agent_id].get("process")
@@ -378,11 +412,16 @@ async def monitor_process_exit(agent_id: str, process):
     return_code = await process.wait()
     print(f"Agent process {process.pid} for agent {agent_id} exited with code {return_code}.")
 
-    # Clean up agent state
-    if agent_id in agents:
-        await broadcast_to_ui(get_current_state()) # Update UI about the exit/removal
-    else:
+    if agent_id not in agents:
         print(f"Agent {agent_id} (PID {process.pid}) exited but was already removed from registry.")
+        return
+
+    if return_code != 0 and agents[agent_id]['status'] != 'stopping':
+        set_agent_state(agent_id, 'error')
+    else:
+        set_agent_state(agent_id, 'stopped')
+
+    await broadcast_to_ui(get_current_state())
 
 
 @app.websocket("/ws/agent/{agent_id}")
@@ -430,7 +469,7 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
                     tasks[task_id]["status"] = status
                     tasks[task_id]["assigned_agent_id"] = None # Unassign
                     tasks[task_id]["watching_uis"] = set() # Clear watchers on completion/failure
-                    agents[agent_id]["status"] = "idle" # Agent becomes idle
+                    set_agent_state(agent_id, "idle")  # Agent becomes idle
                     print(f"Task {task_id} finished by agent {agent_id} with status: {status}. Cleared watchers.")
                     await broadcast_to_ui(get_current_state()) # Broadcast general state
                     await assign_task_if_possible() # Check for next task
@@ -471,16 +510,24 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
         print(f"Agent {agent_id} disconnected.")
     except Exception as e:
         print(f"Error in agent {agent_id} websocket: {e}")
-        agents[agent_id]["status"] = "error" # Mark agent as errored on exception
+        set_agent_state(agent_id, "error")  # Mark agent as errored on exception
     finally:
-        # Cleanup on disconnect or error
+        # Handle busy agent disconnects
+        if agents[agent_id].get("status") == "busy":
+            set_agent_state(agent_id, "error")
+            process = agents[agent_id].get("process")
+            if process and process.returncode is None:
+                process.kill()
+                print(f"Force killed orphaned process for agent {agent_id}")
+        else:
+            # If not busy, just mark as error on disconnect
+            set_agent_state(agent_id, "error")
+
+        # Cleanup connections
         if agent_id in agent_connections:
             del agent_connections[agent_id]
-        if agent_id in agents:
-            # Keep agent entry but mark as disconnected/error unless explicitly terminated
-            agents[agent_id]["status"] = "disconnected_error"
-            agents[agent_id]["websocket"] = None # Remove websocket object
-            print(f"Cleaned up connection for agent {agent_id}. Status: {agents[agent_id]['status']}")
+        agents[agent_id]["websocket"] = None
+        print(f"Cleaned up connection for agent {agent_id}. Status: {agents[agent_id]['status']}")
         await broadcast_to_ui(get_current_state())
 # --- Root Endpoint ---
 @app.get("/")

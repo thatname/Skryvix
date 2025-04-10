@@ -82,40 +82,35 @@ function updateUI(agents, tasks) {
         agentIds.forEach(agentId => {
             const agent = agents[agentId];
             const li = document.createElement('li');
-            li.className = `status-${agent.status || 'unknown'}`; // Add default class
+            const status = agent.status || 'unknown';
+            li.className = `status-${status}`; // Use normalized status
 
             // Agent Info Span
             const infoSpan = document.createElement('span');
-            infoSpan.textContent = `Agent ${agentId.substring(0, 8)} (${agent.status})`;
+            infoSpan.textContent = `Agent ${agentId.substring(0, 8)} (${status})`;
             li.appendChild(infoSpan);
 
-            // Terminate Button (only if not terminating/exited)
-            // Add action buttons based on agent status
-            if (['created', 'stopped', 'exited_normally', 'exited_unexpectedly'].includes(agent.status)) {
+            // Action Buttons based on NEW state machine
+            if (['created', 'stopped', 'error'].includes(status)) {
+                // Can Start from these states
                 const startBtn = document.createElement('button');
                 startBtn.textContent = 'Start';
-                startBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    startAgent(agentId);
-                };
+                startBtn.onclick = (e) => { e.stopPropagation(); startAgent(agentId); };
                 li.appendChild(startBtn);
-            } else if (!['terminating'].includes(agent.status)) {
+            } else if (['idle', 'busy'].includes(status)) {
+                // Can Stop from these states
                 const stopBtn = document.createElement('button');
                 stopBtn.textContent = 'Stop';
-                stopBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    stopAgent(agentId);
-                };
+                stopBtn.onclick = (e) => { e.stopPropagation(); stopAgent(agentId); };
                 li.appendChild(stopBtn);
             }
+            // Starting and Stopping are transient, no user actions needed
 
-            if (!['terminating'].includes(agent.status)) {
+            // Can always Terminate (unless already terminating)
+            if (status !== 'terminating') {
                 const terminateBtn = document.createElement('button');
                 terminateBtn.textContent = 'Terminate';
-                terminateBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    terminateAgent(agentId);
-                };
+                terminateBtn.onclick = (e) => { e.stopPropagation(); terminateAgent(agentId); };
                 li.appendChild(terminateBtn);
             }
             agentList.appendChild(li);
