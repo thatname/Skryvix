@@ -67,12 +67,12 @@ class Agent:
             agent_dir = Path(__file__).parent.absolute()
 
             # Handle streamer_config path
-            streamer_config_path = Path(args.streamer_config)
-            if not streamer_config_path.is_absolute():
-                streamer_config_path = agent_dir / streamer_config_path
+            model_config_path = Path(args.model_config)
+            if not model_config_path.is_absolute():
+                model_config_path = agent_dir / model_config_path
 
             # Create ChatStreamer from config
-            chat_streamer = ChatStreamer.create_from_yaml(str(streamer_config_path))
+            chat_streamer = ChatStreamer.create_from_yaml(str(model_config_path))
 
             # Handle system_prompt_template path
             system_prompt_path = Path(args.system_prompt_template)
@@ -111,68 +111,6 @@ class Agent:
             )
         except Exception as e:
             raise
-
-    @classmethod
-    def create(cls, config_path: Union[str, Path]) -> 'Agent':
-        """
-        Create Agent instance from configuration file
-
-        Args:
-            config_path (Union[str, Path]): Path to the configuration file
-
-        Returns:
-            Agent: Configured Agent instance
-
-        Raises:
-            FileNotFoundError: If any required file is not found
-            ImportError: If tool module import fails
-            yaml.YAMLError: If YAML parsing fails
-        """
-        # Convert path to Path object
-        config_path = Path(config_path)
-        if not config_path.exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-
-        # Read and parse main configuration
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-
-        # Create ChatStreamer from config
-        streamer_config_path = config_path.parent / config['streamer_config']
-        chat_streamer = ChatStreamer.create_from_yaml(streamer_config_path)
-
-        # Load tools
-        tools = []
-        for tool_info in config['tools']:
-            # Split module and class name
-            module_path, class_name = tool_info['class'].rsplit('.', 1)
-            
-            try:
-                # Import module and get class
-                module = importlib.import_module(module_path)
-                tool_class = getattr(module, class_name)
-                
-                # Create tool instance with optional parameters
-                tool_params = tool_info.get('params', {})
-                tool = tool_class(**tool_params)
-                tools.append(tool)
-            except (ImportError, AttributeError) as e:
-                raise ImportError(f"Failed to load tool {tool_info['class']}: {str(e)}")
-
-        # Read system prompt template
-        try:
-            with open(config_path.parent / config['system_prompt_template'], 'r', encoding='utf-8') as f:
-                system_prompt_template = f.read()
-        except FileNotFoundError as e:
-            raise FileNotFoundError(f"System prompt template file not found: {str(e)}")
-
-        # Create Agent instance
-        return cls(
-            chat_streamer=chat_streamer,
-            tools=tools,
-            system_prompt_template=system_prompt_template
-        )
-
     def __init__(
         self,
         chat_streamer: ChatStreamer,
@@ -284,7 +222,7 @@ def main():
     """Main entry point for the agent CLI"""
     #try:
     parser = argparse.ArgumentParser(description='Run the AI agent with specified tools')
-    parser.add_argument('--streamer-config', required=True, help='Path to the ChatStreamer configuration file')
+    parser.add_argument('--model-config', required=True, help='Path to the model configuration file')
     parser.add_argument('--system-prompt-template', required=True, help='Path to the system prompt template file')
     parser.add_argument('--tool', nargs='+', action=ToolAction, default=[], 
                         help='Tool configuration in format: module.ClassName param1=value1 param2=value2')
