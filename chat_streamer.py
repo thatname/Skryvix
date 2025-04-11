@@ -145,7 +145,7 @@ class ChatStreamer:
             user = True
             for msg in message.split("\n|||\n"):
                 if msg != "":
-                    self.history.push({"role": "user" if user else "assistant", "content": msg})
+                    self.history.append({"role": "user" if user else "assistant", "content": msg})
                     user = not user
 
             # Build messages and parameters
@@ -159,11 +159,16 @@ class ChatStreamer:
 
         
             # Process response token by token
-            async for chunk in stream:
+            async for chunk in stream:               
+                if "reasoning" in chunk.choices[0].delta.model_extra:
+                    content = chunk.choices[0].delta.model_extra["reasoning"]
+                    if content is not None:
+                        self.history[-1]["content"] += content
+                        yield content, True
                 if chunk.choices[0].delta.content is not None:
                     content = chunk.choices[0].delta.content
                     self.history[-1]["content"] += content
-                    yield content
+                    yield content, False
 
         except Exception as e:
             yield f"Exception :{e}"
