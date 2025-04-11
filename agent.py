@@ -98,12 +98,6 @@ class Agent:
         """
         tool_descriptions = [tool.description() for tool in self.tools]
         return self.system_prompt_template.render(tools=tool_descriptions)
-        
-    def _prepare_user_prompt(self, task: str) -> str:
-        """
-        Prepare user prompt with direct task
-        """
-        return task
     
     async def _process_tool_call(self, content: str) -> Tuple[Optional[str], Optional[str]]:
         """
@@ -133,13 +127,14 @@ class Agent:
                     
         return None
         
-    async def start(self, user_task: str):
+    async def __call__(self, user_task: str):
         """
         Start agent with user task
         
         Args:
             user_task (str): User's task description
         """
+        # assert user_task.endswith("\n|||\n")
         # Set system prompt
         self.chat_streamer.system_prompt = self._prepare_system_prompt()
         self.chat_streamer.stop = ['```\n'] # Tool calling by code.
@@ -147,21 +142,22 @@ class Agent:
         self.chat_streamer.clear_history()
         
         # Prepare initial user prompt
-        prompt = self._prepare_user_prompt(user_task)
+        prompt = user_task
         
         # Start streaming conversation
         while True:
             buffer = ""
+            
             async for token in self.chat_streamer(prompt):
                 buffer += token
                 yield token
+            yield "\n|||\n"
             
             #if buffer.endswith("`"):
             result = await self._process_tool_call(buffer + '```\n')
             if result:
                 prompt = result
-                yield "\n|||\n" + prompt + "\n|||\n"
-
+                yield prompt + "\n|||\n"
             else:
                 break
         
