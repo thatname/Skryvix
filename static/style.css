@@ -67,18 +67,22 @@ body {
 }
 
 /* Status Styling */
-.status-idle { background-color: #e0ffe0; border-left: 5px solid #4CAF50; }
-.status-busy { background-color: #ffe0e0; border-left: 5px solid #F44336; }
-.status-new { background-color: #e0e0ff; border-left: 5px solid #2196F3; }
-.status-running { background-color: #ffffcc; border-left: 5px solid #FFC107; }
-.status-completed { background-color: #d3d3d3; border-left: 5px solid #808080; }
-.status-failed { background-color: #ffcccc; border-left: 5px solid #E91E63; }
-.status-starting,
-.status-terminating,
-.status-disconnected_error,
-.status-exited_unexpectedly, /* Added style */
-.status-exited_normally, /* Added style */
-.status-error { background-color: #ffcc99; border-left: 5px solid #FF9800; }
+/* Agent Statuses */
+.status-created { background-color: #e0e0ff; border-left: 5px solid #2196F3; } /* Blue - Ready to start */
+.status-starting { background-color: #ffffcc; border-left: 5px solid #FFC107; } /* Yellow - In progress */
+.status-idle { background-color: #e0ffe0; border-left: 5px solid #4CAF50; } /* Green - Ready */
+.status-busy { background-color: #ffe0e0; border-left: 5px solid #F44336; } /* Red - Working */
+.status-stopping { background-color: #ffcc99; border-left: 5px solid #FF9800; } /* Orange - In progress */
+.status-stopped { background-color: #d3d3d3; border-left: 5px solid #808080; } /* Grey - Inactive */
+.status-error { background-color: #ffcccc; border-left: 5px solid #E91E63; } /* Pink/Red - Error */
+.status-terminating { background-color: #ffcc99; border-left: 5px solid #FF9800; } /* Orange - In progress */
+.status-unknown { background-color: #f0f0f0; border-left: 5px solid #aaaaaa; } /* Light Grey - Unknown */
+
+/* Task Statuses (can reuse some agent styles or define separately) */
+.status-new { background-color: #e0e0ff; border-left: 5px solid #2196F3; } /* Blue */
+.status-running { background-color: #ffffcc; border-left: 5px solid #FFC107; } /* Yellow */
+.status-completed { background-color: #d3d3d3; border-left: 5px solid #808080; } /* Grey */
+.status-failed { background-color: #ffcccc; border-left: 5px solid #E91E63; } /* Pink/Red */
 
 /* Input and Buttons */
 input[type="text"] {

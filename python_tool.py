@@ -32,7 +32,7 @@ In order to complete your development task, you can write python code to manipul
             output = redirected_output.getvalue()
             return output if output else "Python code executed successfully, no output"
         except Exception as e:
-            return f"Execution error: {str(e)}"
+            return f"Execution : {str(e)}"
         finally:
             # 恢复原始的标准输出
             sys.stdout = old_stdout

@@ -1,10 +1,12 @@
 // --- DOM Elements ---
 const agentList = document.getElementById('agentList');
-const newTasksList = document.getElementById('newTasks');
+// const newTasksList = document.getElementById('newTasks'); // Removed
 const runningTasksList = document.getElementById('runningTasks');
+const incompleteTasksList = document.getElementById('incompleteTasks');
 const completedTasksList = document.getElementById('completedTasks');
-const spawnAgentBtn = document.getElementById('spawnAgent');
+const createAgentBtn = document.getElementById('createAgent');
 const addTaskBtn = document.getElementById('addTask');
+const autoModeSwitch = document.getElementById('autoModeSwitch'); // Added
 const taskDescInput = document.getElementById('taskDesc');
 const progressPanel = document.getElementById('progressPanel');
 const progressTaskId = document.getElementById('progressTaskId');
@@ -13,10 +15,15 @@ const closeProgressPanel = document.getElementById('closeProgressPanel');
 const toggleLayoutBtn = document.getElementById('toggleLayout'); // Added
 const mainContainer = document.getElementById('mainContainer'); // Added
 
+// --- Global State ---
+let currentAssignmentMode = 'auto'; // Default, will be updated by server
+let currentAgents = {};
+let currentTasks = {};
+let ws = null;
+
 // --- WebSocket Setup ---
 const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 const wsUrl = `${wsProtocol}//${location.host}/ws/ui`;
-let ws = null;
 
 function connectWebSocket() {
     ws = new WebSocket(wsUrl);
@@ -26,8 +33,9 @@ function connectWebSocket() {
         console.log("UI WebSocket connected");
         // Clear any previous error messages
         agentList.innerHTML = '';
-        newTasksList.innerHTML = '';
+        // newTasksList.innerHTML = ''; // Removed
         runningTasksList.innerHTML = '';
+        incompleteTasksList.innerHTML = ''; // Clear this too on connect
         completedTasksList.innerHTML = '';
     };
 
@@ -36,7 +44,16 @@ function connectWebSocket() {
             const data = JSON.parse(event.data);
             console.log("Received message:", data);
             if (data.type === 'state') {
-                updateUI(data.agents, data.tasks);
+                // Store state globally before updating UI
+                currentAgents = data.agents || {};
+                currentTasks = data.tasks || {};
+                currentAssignmentMode = data.mode || 'auto'; // Update mode from state
+                document.getElementById('autoModeSwitch').checked = (currentAssignmentMode === 'auto');
+                updateUI(); // Call without args, uses global state
+            } else if (data.type === 'mode_update') { // Handle mode updates separately
+                currentAssignmentMode = data.mode;
+                document.getElementById('autoModeSwitch').checked = (currentAssignmentMode === 'auto');
+                updateUI(); // Re-render UI based on new mode
             } else if (data.type === 'task_progress_full') {
                 updateProgressPanelFull(data.payload);
             } else if (data.type === 'task_progress_delta') {
@@ -71,32 +88,47 @@ function connectWebSocket() {
 }
 
 // --- UI Update Logic ---
-function updateUI(agents, tasks) {
+// Now uses global state: currentAgents, currentTasks, currentAssignmentMode
+function updateUI() {
     // Update Agents
     agentList.innerHTML = ''; // Clear previous list
-    const agentIds = Object.keys(agents).sort(); // Sort for consistent order
+    const agentIds = Object.keys(currentAgents).sort(); // Sort for consistent order
 
     if (agentIds.length === 0) {
         agentList.innerHTML = '<li>No active agents.</li>';
     } else {
         agentIds.forEach(agentId => {
-            const agent = agents[agentId];
+            const agent = currentAgents[agentId]; // Use global state
             const li = document.createElement('li');
-            li.className = `status-${agent.status || 'unknown'}`; // Add default class
+            const status = agent.status || 'unknown';
+            li.className = `status-${status}`; // Use normalized status
 
             // Agent Info Span
             const infoSpan = document.createElement('span');
-            infoSpan.textContent = `Agent ${agentId.substring(0, 8)} (${agent.status})`;
+            infoSpan.textContent = `Agent ${agentId.substring(0, 8)} (${status})`;
             li.appendChild(infoSpan);
 
-            // Terminate Button (only if not terminating/exited)
-            if (!['terminating', 'exited_unexpectedly', 'exited_normally'].includes(agent.status)) {
+            // Action Buttons based on NEW state machine
+            if (['created', 'stopped', 'error'].includes(status)) {
+                // Can Start from these states
+                const startBtn = document.createElement('button');
+                startBtn.textContent = 'Start';
+                startBtn.onclick = (e) => { e.stopPropagation(); startAgent(agentId); };
+                li.appendChild(startBtn);
+            } else if (['idle', 'busy'].includes(status)) {
+                // Can Stop from these states
+                const stopBtn = document.createElement('button');
+                stopBtn.textContent = 'Stop';
+                stopBtn.onclick = (e) => { e.stopPropagation(); stopAgent(agentId); };
+                li.appendChild(stopBtn);
+            }
+            // Starting and Stopping are transient, no user actions needed
+
+            // Can always Terminate (unless already terminating)
+            if (status !== 'terminating') {
                 const terminateBtn = document.createElement('button');
                 terminateBtn.textContent = 'Terminate';
-                terminateBtn.onclick = (e) => {
-                    e.stopPropagation(); // Prevent potential li click events
-                    terminateAgent(agentId);
-                };
+                terminateBtn.onclick = (e) => { e.stopPropagation(); terminateAgent(agentId); };
                 li.appendChild(terminateBtn);
             }
             agentList.appendChild(li);
@@ -105,56 +137,115 @@ function updateUI(agents, tasks) {
 
 
     // Update Tasks
-    newTasksList.innerHTML = '';
+    // newTasksList.innerHTML = ''; // Removed
     runningTasksList.innerHTML = '';
+    incompleteTasksList.innerHTML = '';
     completedTasksList.innerHTML = '';
-    const taskIds = Object.keys(tasks).sort((a, b) => tasks[a].id.localeCompare(tasks[b].id)); // Sort by ID
+    const taskIds = Object.keys(currentTasks).sort((a, b) => currentTasks[a].id.localeCompare(currentTasks[b].id)); // Sort by ID
 
-    let hasNew = false, hasRunning = false, hasCompleted = false;
+    let hasRunning = false, hasIncomplete = false, hasCompleted = false; // Removed hasNew
 
     taskIds.forEach(taskId => {
-        const task = tasks[taskId];
+        const task = currentTasks[taskId]; // Use global state
         const li = document.createElement('li');
         li.className = `status-${task.status || 'unknown'}`;
 
+        // Task Info Span
+        const infoSpan = document.createElement('span');
         let text = `Task ${taskId.substring(0, 8)}: ${task.description || 'No description'}`;
         if (task.status === 'running') {
             text += ` (Agent: ${task.assigned_agent_id ? task.assigned_agent_id.substring(0, 8) : 'N/A'})`;
-        } else if (task.status === 'completed' || task.status === 'failed') {
+        } else if (task.status === 'completed') { // Only show result for completed
             let resultText = 'N/A';
             if (task.result !== null && task.result !== undefined) {
-                try {
+                 try {
                     // Attempt to stringify; limit length
                     resultText = JSON.stringify(task.result);
                     if (resultText.length > 100) {
                          resultText = resultText.substring(0, 100) + '...';
                     }
                 } catch (e) {
-                    resultText = String(task.result).substring(0, 100) + '...'; // Fallback to string conversion
+                    resultText = String(task.result).substring(0, 100) + '...'; // Fallback
                 }
             }
              text += ` (Result: ${resultText})`;
         }
-        li.textContent = text;
-        li.title = `ID: ${taskId}\nStatus: ${task.status}\nDescription: ${task.description}\nResult: ${JSON.stringify(task.result, null, 2)}`; // Tooltip with full details
-        li.style.cursor = 'pointer'; // Indicate it's clickable
-        li.onclick = () => requestTaskProgress(taskId); // Add click handler
+        infoSpan.textContent = text;
+        li.appendChild(infoSpan);
 
-        if (task.status === 'new') {
-            newTasksList.appendChild(li);
-            hasNew = true;
-        } else if (task.status === 'running') {
+        // Add click handler to show progress
+        infoSpan.style.cursor = 'pointer'; // Indicate it's clickable
+        infoSpan.onclick = () => requestTaskProgress(taskId);
+
+        // Add Delete Button to ALL tasks
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.style.marginLeft = '10px';
+        deleteBtn.onclick = (e) => { e.stopPropagation(); deleteTask(taskId); };
+        li.appendChild(deleteBtn);
+
+        // Add Manual Assignment Controls (if applicable)
+        // Only allow assignment for 'incomplete' tasks now
+        if (currentAssignmentMode === 'manual' && task.status === 'incomplete') {
+            const assignDiv = document.createElement('div');
+            assignDiv.style.display = 'inline-block'; // Keep controls on same line
+            assignDiv.style.marginLeft = '10px';
+
+            const select = document.createElement('select');
+            select.id = `assign-select-${taskId}`;
+            let hasIdleAgents = false;
+            Object.values(currentAgents).forEach(agent => {
+                if (agent.status === 'idle') {
+                    const option = document.createElement('option');
+                    option.value = agent.id;
+                    option.textContent = `Agent ${agent.id.substring(0, 8)}`;
+                    select.appendChild(option);
+                    hasIdleAgents = true;
+                }
+            });
+
+            if (!hasIdleAgents) {
+                const option = document.createElement('option');
+                option.textContent = 'No idle agents';
+                option.disabled = true;
+                select.appendChild(option);
+            }
+
+            const assignBtn = document.createElement('button');
+            assignBtn.textContent = 'Assign';
+            assignBtn.disabled = !hasIdleAgents;
+            assignBtn.onclick = (e) => {
+                e.stopPropagation();
+                const selectedAgentId = select.value;
+                // Check if a valid, non-disabled agent is selected
+                if (selectedAgentId && !select.options[select.selectedIndex].disabled) {
+                    manualAssignTask(taskId, selectedAgentId);
+                }
+            };
+
+            assignDiv.appendChild(select);
+            assignDiv.appendChild(assignBtn);
+            li.appendChild(assignDiv);
+        }
+
+
+        // Append task to the correct list
+        if (task.status === 'running') {
             runningTasksList.appendChild(li);
             hasRunning = true;
-        } else { // completed or failed
+        } else if (task.status === 'incomplete') {
+            incompleteTasksList.appendChild(li);
+            hasIncomplete = true;
+        } else if (task.status === 'completed') { // Explicitly check completed
             completedTasksList.appendChild(li);
             hasCompleted = true;
         }
     });
 
     // Add placeholder if lists are empty
-    if (!hasNew) newTasksList.innerHTML = '<li>No new tasks.</li>';
+    // if (!hasNew) newTasksList.innerHTML = '<li>No new tasks.</li>'; // Removed
     if (!hasRunning) runningTasksList.innerHTML = '<li>No tasks running.</li>';
+    if (!hasIncomplete) incompleteTasksList.innerHTML = '<li>No incomplete tasks.</li>';
     if (!hasCompleted) completedTasksList.innerHTML = '<li>No completed tasks.</li>';
 }
 
@@ -173,14 +264,32 @@ async function loadConfigs() {
 
 window.onload = async () => {
     await loadConfigs();
+    connectWebSocket(); // Connect WebSocket after initial setup
 };
 
 // --- Event Handlers ---
-spawnAgentBtn.onclick = () => {
-    const config = document.getElementById('config-select').value;
-    console.log("Requesting agent spawn with config:", config);
-    sendWsCommand({ command: 'spawn_agent', payload: { config: config } });
+// Add listener for the mode switch
+autoModeSwitch.onchange = () => {
+    const mode = autoModeSwitch.checked ? 'auto' : 'manual';
+    console.log(`Setting assignment mode to: ${mode}`);
+    sendWsCommand({ command: 'set_assignment_mode', payload: { mode: mode } });
 };
+
+createAgentBtn.onclick = () => {
+    const config = document.getElementById('config-select').value;
+    console.log("Requesting agent creation with config:", config);
+    sendWsCommand({ command: 'create_agent', payload: { config: config } });
+};
+
+function startAgent(agentId) {
+    console.log("Requesting start for agent:", agentId);
+    sendWsCommand({ command: 'start_agent', payload: { agent_id: agentId } });
+}
+
+function stopAgent(agentId) {
+    console.log("Requesting stop for agent:", agentId);
+    sendWsCommand({ command: 'stop_agent', payload: { agent_id: agentId } });
+}
 
 addTaskBtn.onclick = () => {
     const description = taskDescInput.value.trim();
@@ -196,6 +305,19 @@ addTaskBtn.onclick = () => {
 function terminateAgent(agentId) {
      console.log("Requesting termination for agent:", agentId);
      sendWsCommand({ command: 'terminate_agent', payload: { agent_id: agentId } });
+}
+
+function deleteTask(taskId) {
+    // Use confirm dialog
+    if (confirm(`Are you sure you want to delete task ${taskId.substring(0,8)}? This cannot be undone.`)) {
+        console.log("Requesting deletion for task:", taskId);
+        sendWsCommand({ command: 'delete_task', payload: { task_id: taskId } });
+    }
+}
+
+function manualAssignTask(taskId, agentId) {
+     console.log(`Requesting manual assignment of task ${taskId.substring(0,8)} to agent ${agentId.substring(0,8)}`);
+     sendWsCommand({ command: 'manual_assign_task', payload: { task_id: taskId, agent_id: agentId } });
 }
 
 // --- Helper to Send Commands ---
@@ -237,10 +359,6 @@ function updateProgressPanelDelta(payload) {
     // Check if the received progress corresponds to the currently displayed task ID
     const displayedTaskIdShort = progressTaskId.textContent.replace('Task ID: ', '');
     if (receivedTaskId.startsWith(displayedTaskIdShort)) { // Compare with truncated ID
-        // Add separator if it's the first assistant token (history ends with user prompt)
-        if (progressContent.textContent.split('\n|||\n').length < 3) {
-             progressContent.textContent += "\n|||\n";
-        }
         progressContent.textContent += token;
         // Scroll to bottom to show the latest token
         progressContent.scrollTop = progressContent.scrollHeight;
@@ -267,4 +385,4 @@ toggleLayoutBtn.onclick = () => {
 
 
 // --- Initial Connection ---
-connectWebSocket();
+// connectWebSocket(); // Moved to window.onload

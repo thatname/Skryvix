@@ -12,16 +12,20 @@
             <div class="panel">
                 <h2>Agent Manager</h2>
 <select id="config-select"></select>
-<button id="spawnAgent">Spawn New Agent</button>
-            <h3>Active Agents</h3>
+<button id="createAgent">Create Agent</button>
+            <h3>Agent List</h3>
             <ul id="agentList" class="agent-list"></ul>
         </div>
         <div class="panel">
             <h2>Task Management</h2>
             <textarea id="taskDesc" placeholder="Enter new task description" rows="3"></textarea>
             <button id="addTask">Add Task</button>
-            <h3>New Tasks</h3>
-            <ul id="newTasks" class="task-list"></ul>
+            <div class="mode-switch" style="margin-bottom: 10px; margin-top: 10px;">
+                <label for="autoModeSwitch">Auto Assign Tasks:</label>
+                <input type="checkbox" id="autoModeSwitch" checked>
+            </div>
+            <h3>Incomplete Tasks</h3>
+            <ul id="incompleteTasks" class="task-list"></ul>
             <h3>Running Tasks</h3>
             <ul id="runningTasks" class="task-list"></ul>
             <h3>Completed Tasks</h3>

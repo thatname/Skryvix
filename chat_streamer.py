@@ -69,28 +69,6 @@ class ChatStreamer:
         self.client = AsyncOpenAI(**client_kwargs)
     def clear_history(self):
         self.history = [{"role": "system", "content": self.system_prompt}]
-        
-    def _build_messages(self, message: str) -> List[Dict[str, str]]:
-        """
-        Build message history list
-
-        Args:
-            message (str): Current user message
-
-        Returns:
-            List[Dict[str, str]]: Formatted message list
-        """
-        messages = [{"role": "system", "content": self.system_prompt}]
-        
-        # Add historical messages
-        for user_msg, assistant_msg in self._history:
-            messages.append({"role": "user", "content": user_msg})
-            messages.append({"role": "assistant", "content": assistant_msg})
-        
-        # Add current user message
-        messages.append({"role": "user", "content": message})
-        
-        return messages
 
     def _build_completion_params(self) -> Dict[str, Any]:
         """
@@ -163,25 +141,34 @@ class ChatStreamer:
         self,
         message
     ):
-
-        self.history.append({"role": "user", "content": message})
-
-        # Build messages and parameters
-        params = self._build_completion_params()
-        params["messages"] = self.history
-
-        # Create streaming response
-        stream = await self.client.chat.completions.create(**params)
-        
-        self.history.append({"role": "assistant", "content": ""})
-
         try:
+            user = True
+            for msg in message.split("\n|||\n"):
+                if msg != "":
+                    self.history.append({"role": "user" if user else "assistant", "content": msg})
+                    user = not user
+
+            # Build messages and parameters
+            params = self._build_completion_params()
+            params["messages"] = self.history
+
+            # Create streaming response
+            stream = await self.client.chat.completions.create(**params)
+            
+            self.history.append({"role": "assistant", "content": ""})
+
+        
             # Process response token by token
-            async for chunk in stream:
+            async for chunk in stream:               
+                if "reasoning" in chunk.choices[0].delta.model_extra:
+                    content = chunk.choices[0].delta.model_extra["reasoning"]
+                    if content is not None:
+                        self.history[-1]["content"] += content
+                        yield content, True
                 if chunk.choices[0].delta.content is not None:
                     content = chunk.choices[0].delta.content
                     self.history[-1]["content"] += content
-                    yield content
+                    yield content, False
 
         except Exception as e:
-            raise
+            yield f"Exception :{e}"

@@ -4,6 +4,7 @@ import uuid
 import os
 import sys
 import signal
+from threading import Lock
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, FileResponse # Added FileResponse
 from fastapi.staticfiles import StaticFiles # Added StaticFiles
@@ -11,7 +12,7 @@ from typing import Dict, List, Any, Optional
 import asyncio.subprocess as subprocess # Added for process management
 
 # --- Configuration ---
-AGENT_SCRIPT_PATH = "agent_runner.py" # Script to run for each agent
+AGENT_SCRIPT_PATH = os.path.join(os.path.dirname(__file__), "agent_runner.py") # Script to run for each agent
 AGENT_WORKDIR_BASE = os.getenv("AGENT_WORKDIR_BASE", "agent_workspaces") # Base directory for agent working directories
 
 AGENT_CONFIG_DIR = 'agent_configs'
@@ -22,14 +23,79 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # --- State Management ---
-# Store agent information: {agent_id: {"id": agent_id, "process": process_handle, "status": "idle/busy/starting/terminating/error", "websocket": websocket, "workdir": str}}
+state_lock = Lock()
+
+# Agent State
+AGENT_TRANSITIONS = {
+    'created': ['starting', 'terminating'],
+    'starting': ['idle', 'terminating'],
+    'idle': ['busy', 'stopping', 'terminating'],
+    'busy': ['idle', 'stopping', 'terminating'], # Agent reports completion/failure -> idle, external stop -> stopping
+    'stopping': ['stopped', 'terminating'],
+    'stopped': ['starting', 'terminating'],
+    'terminating': ['terminated'] # Final state (implicitly on removal)
+}
+
+def validate_agent_transition(old_state: str, new_state: str) -> bool:
+    """Enforce valid agent state transitions"""
+    return new_state in AGENT_TRANSITIONS.get(old_state, [])
+
+def set_agent_state(agent_id: str, new_state: str):
+    """Atomically update agent state with validation"""
+    if agent_id not in agents:
+        print(f"Warning: Attempted to set state for non-existent agent {agent_id}")
+        return False
+    with state_lock:
+        old_state = agents[agent_id]['status']
+        if not validate_agent_transition(old_state, new_state):
+            print(f"Invalid agent state transition: {old_state} -> {new_state} for agent {agent_id}")
+            return False
+        agents[agent_id]['status'] = new_state
+        print(f"Agent {agent_id} state changed: {old_state} -> {new_state}") # Added logging
+        return True
+
+# Task State
+TASK_TRANSITIONS = {
+    # 'new' state removed
+    'running': ['completed', 'incomplete', 'terminating'], # Agent reports success -> completed, agent reports failure/crashes/disconnects -> incomplete
+    'completed': ['terminating'],
+    'incomplete': ['running', 'terminating'], # Can be retried, now the initial state
+    'terminating': ['terminated'] # Final state (implicitly on removal)
+}
+
+def validate_task_transition(old_state: str, new_state: str) -> bool:
+    """Enforce valid task state transitions"""
+    return new_state in TASK_TRANSITIONS.get(old_state, [])
+
+def set_task_state(task_id: str, new_state: str):
+    """Atomically update task state with validation"""
+    if task_id not in tasks:
+        print(f"Warning: Attempted to set state for non-existent task {task_id}")
+        return False
+    with state_lock:
+        # Ensure task exists within the lock
+        if task_id not in tasks:
+             print(f"Warning: Task {task_id} disappeared before state change.")
+             return False
+        old_state = tasks[task_id]['status']
+        # Corrected logic:
+        if not validate_task_transition(old_state, new_state):
+            print(f"Invalid task state transition: {old_state} -> {new_state} for task {task_id}")
+            return False
+        tasks[task_id]['status'] = new_state
+        print(f"Task {task_id} state changed: {old_state} -> {new_state}") # Added logging
+        return True
+
+# Store agent information: {agent_id: {"id": agent_id, "process": process_handle, "status": "idle/busy/starting/stopping/stopped/terminating", "websocket": websocket, "workdir": str, "config_path": str}}
 agents: Dict[str, Dict[str, Any]] = {}
-# Store task information: {task_id: {"id": task_id, "description": desc, "status": "new/running/completed/failed", "assigned_agent_id": agent_id, "result": result, "history": str, "watching_uis": set[WebSocket]}}
+# Store task information: {task_id: {"id": task_id, "description": desc, "status": "new/running/completed/incomplete", "assigned_agent_id": agent_id | None, "result": result | None, "history": str, "watching_uis": set[WebSocket]}}
 tasks: Dict[str, Dict[str, Any]] = {}
 # Store active UI connections
-ui_connections: List[WebSocket] = [] # Note: We use task['watching_uis'] for progress updates, this list is for general state broadcasts
+ui_connections: List[WebSocket] = []
 # Store active agent connections: {agent_id: websocket}
 agent_connections: Dict[str, WebSocket] = {}
+# Assignment Mode
+auto_assign_mode: bool = True
 
 @app.get('/get_configs')
 async def get_configs():
@@ -68,7 +134,12 @@ def get_current_state() -> Dict[str, Any]:
         task_id: {k: v for k, v in task_data.items() if k not in ["history", "watching_uis"]}
         for task_id, task_data in tasks.items()
     }
-    return {"type": "state", "agents": serializable_agents, "tasks": serializable_tasks}
+    return {
+        "type": "state",
+        "agents": serializable_agents,
+        "tasks": serializable_tasks,
+        "mode": "auto" if auto_assign_mode else "manual" # Include current mode
+    }
 
 async def broadcast_delta_to_watching_uis(task_id: str, message: Dict[str, Any]):
     """Sends a delta message only to UIs watching a specific task."""
@@ -94,41 +165,79 @@ async def broadcast_delta_to_watching_uis(task_id: str, message: Dict[str, Any])
         tasks[task_id]['watching_uis'].difference_update(disconnected_watchers)
 
 
+async def _assign_task_to_agent(task_id: str, agent_id: str) -> bool:
+    """Assigns a specific task to a specific agent, updates states, and notifies."""
+    if task_id not in tasks or agent_id not in agents:
+        print(f"Error: Task {task_id} or Agent {agent_id} not found for assignment.")
+        return False
+
+    agent_ws = agent_connections.get(agent_id)
+    task = tasks[task_id]
+    agent = agents[agent_id]
+
+    if not agent_ws:
+         print(f"Agent {agent_id} websocket not found for task assignment.")
+         set_agent_state(agent_id, "stopped")
+         await broadcast_to_ui(get_current_state())
+         return False
+    if agent['status'] != 'idle':
+         print(f"Error: Agent {agent_id} is not idle (status: {agent['status']}). Cannot assign task {task_id}.")
+         return False
+    # Only assign tasks that are 'incomplete'
+    if task['status'] != 'incomplete':
+         print(f"Error: Task {task_id} is not incomplete (status: {task['status']}). Cannot assign.")
+         return False
+
+    print(f"Assigning task {task_id} to agent {agent_id}")
+    try:
+        # Update state using the new setters
+        if not set_agent_state(agent_id, "busy"): return False # Check if transition failed
+        if not set_task_state(task_id, "running"):
+            set_agent_state(agent_id, "idle") # Revert agent state if task transition fails
+            return False
+
+        task["assigned_agent_id"] = agent_id
+        # Initialize/Reset history and watchers
+        task["history"] = f"{task['description']}\n|||\n" # Start history
+        task["watching_uis"] = set()
+
+        # Notify agent and UI
+        await agent_ws.send_json({"type": "assign_task", "task_id": task_id, "description": task["description"]})
+        await broadcast_to_ui(get_current_state()) # Broadcast general state update
+        print(f"Task {task_id} assigned successfully to {agent_id}.")
+        return True # Indicate success
+    except Exception as e:
+        print(f"Error assigning task {task_id} to agent {agent_id}: {e}")
+        # Revert state if sending failed
+        set_agent_state(agent_id, "idle") # Revert agent state
+        # Attempt to revert task state, check if task still exists
+        if task_id in tasks:
+            # Revert to 'incomplete' as it's the only valid starting state now
+            set_task_state(task_id, 'incomplete')
+            tasks[task_id]["assigned_agent_id"] = None
+        await broadcast_to_ui(get_current_state())
+        return False
+
 async def assign_task_if_possible():
-    """Assigns a new task to an idle agent if available."""
-    idle_agent_id = next((agent_id for agent_id, data in agents.items() if data.get("status") == "idle" and agent_id in agent_connections), None)
-    new_task_id = next((task_id for task_id, data in tasks.items() if data.get("status") == "new"), None)
+    """Assigns a new task to an idle agent if available AND in auto mode."""
+    if not auto_assign_mode:
+        # print("Auto-assign disabled.") # Optional logging
+        return
 
-    if idle_agent_id and new_task_id:
-        print(f"Assigning task {new_task_id} to agent {idle_agent_id}")
-        agent_ws = agent_connections.get(idle_agent_id)
-        task = tasks[new_task_id]
-        if agent_ws:
-            try:
-                # Update state
-                agents[idle_agent_id]["status"] = "busy"
-                task["status"] = "running"
-                task["assigned_agent_id"] = idle_agent_id
-                # Initialize history and watchers
-                task["history"] = f"user\n|||\n{task['description']}" # Start history with user prompt
-                task["watching_uis"] = set()
+    idle_agent_id = next(
+        (a_id for a_id, data in agents.items()
+         if data.get("status") == "idle"
+         and a_id in agent_connections # Check if websocket connection exists
+         and data.get("process")
+         and data["process"].returncode is None), # Check if process is running
+        None
+    )
+    # Find an 'incomplete' task for auto-assignment
+    incomplete_task_id = next((task_id for task_id, data in tasks.items() if data.get("status") == "incomplete"), None)
 
-                # Notify agent and UI
-                await agent_ws.send_json({"type": "assign_task", "task_id": new_task_id, "description": task["description"]})
-                await broadcast_to_ui(get_current_state()) # Broadcast general state update
-                print(f"Task {new_task_id} assigned successfully.")
-            except Exception as e:
-                print(f"Error assigning task {new_task_id} to agent {idle_agent_id}: {e}")
-                # Revert state if sending failed
-                agents[idle_agent_id]["status"] = "idle" # Or maybe 'error'?
-                task["status"] = "new"
-                task["assigned_agent_id"] = None
-                await broadcast_to_ui(get_current_state())
-        else:
-             print(f"Agent {idle_agent_id} websocket not found for task assignment.")
-             # Consider setting agent status to error or removing if websocket is missing but should be there
-             agents[idle_agent_id]["status"] = "error" # Example
-             await broadcast_to_ui(get_current_state())
+
+    if idle_agent_id and incomplete_task_id:
+        await _assign_task_to_agent(task_id=incomplete_task_id, agent_id=idle_agent_id)
 
 
 # --- WebSocket Endpoints ---
@@ -148,105 +257,151 @@ async def websocket_ui_endpoint(websocket: WebSocket):
             command = data.get("command")
             payload = data.get("payload", {})
 
-            if command == "spawn_agent":
+            if command == "create_agent":
                 agent_id = str(uuid.uuid4())
-                print(f"UI requested to spawn agent {agent_id}")
-                agents[agent_id] = {"id": agent_id, "process": None, "status": "starting", "websocket": None}
-                await broadcast_to_ui(get_current_state()) # Update UI immediately
+                print(f"UI requested to create agent {agent_id}")
+                
+                # Create agent work directory
+                workdir = os.path.join(AGENT_WORKDIR_BASE, agent_id)
+                os.makedirs(workdir, exist_ok=True)
+                
+                # Store agent config path
+                config_filename = payload.get("config", "example_agent.yaml")
+                config_dir_path = os.path.join(os.path.dirname(__file__), AGENT_CONFIG_DIR)
+                config_path = os.path.join(config_dir_path, config_filename)
+                
+                # Initialize agent with 'created' status
+                agents[agent_id] = {
+                    "id": agent_id,
+                    "process": None,
+                    "status": "created",
+                    "websocket": None,
+                    "workdir": workdir,
+                    "config_path": config_path
+                }
+                await broadcast_to_ui(get_current_state())
 
-                try:
-                    # Determine server URL (adjust if running behind proxy etc.)
-                    # For simplicity, assuming localhost for now.
-                    # In production, might need request.base_url or config.
-                    server_ws_url = "ws://localhost:8000" # Adjust as needed
-
-                    # Create agent work directory
-                    workdir = os.path.join(AGENT_WORKDIR_BASE, agent_id)
-                    os.makedirs(workdir, exist_ok=True)
-                    agents[agent_id]["workdir"] = workdir
-
-                    # Command to run the agent runner script
-                    config_filename = payload.get("config", "example_agent.yaml")
-                    config_dir_path = os.path.join(os.path.dirname(__file__), AGENT_CONFIG_DIR)
-                    config_path = os.path.join(config_dir_path, config_filename)
-                    
-                    cmd = [
-                        sys.executable, # Use the same Python interpreter
-                        AGENT_SCRIPT_PATH,
-                        "--agent-id", agent_id,
-                        "--server-url", server_ws_url,
-                        "--config-path", config_path
-                    ]
-                    print(f"Spawning agent {agent_id} with command: {' '.join(cmd)}")
-
-                    # Spawn the process with working directory set
-                    process = await asyncio.create_subprocess_exec(
-                        *cmd,
-                        stdout=subprocess.PIPE, # Capture stdout
-                        stderr=subprocess.PIPE, # Capture stderr
-                        cwd=workdir # Set the working directory for the process
-                    )
-                    agents[agent_id]["process"] = process
-                    print(f"Agent {agent_id} process started with PID: {process.pid}")
-
-                    # Start background tasks to monitor stdout/stderr and process exit
-                    asyncio.create_task(monitor_process_output(agent_id, process.stdout, "stdout"))
-                    asyncio.create_task(monitor_process_output(agent_id, process.stderr, "stderr"))
-                    asyncio.create_task(monitor_process_exit(agent_id, process))
-
-                    # Status will be updated to 'idle' when the agent connects via WebSocket
-                except Exception as e:
-                    print(f"Failed to spawn agent {agent_id}: {e}")
-                    agents[agent_id]["status"] = "error"
-                    agents[agent_id]["process"] = None # Ensure process is None on failure
+            elif command == "start_agent":
+                agent_id = payload.get("agent_id")
+                if agent_id in agents and agents[agent_id]["status"] in ["created", "stopped"]:
+                    print(f"UI requested to start agent {agent_id}")
+                    set_agent_state(agent_id, "starting")
                     await broadcast_to_ui(get_current_state())
 
+                    try:
+                        # Determine server URL
+                        server_ws_url = "ws://localhost:8000" # Adjust as needed
+                        
+                        cmd = [
+                            sys.executable,
+                            AGENT_SCRIPT_PATH,
+                            "--agent-id", agent_id,
+                            "--server-url", server_ws_url,
+                            "--config-path", agents[agent_id]["config_path"]
+                        ]
+                        print(f"Starting agent {agent_id} with command: {' '.join(cmd)}")
+
+                        process = await asyncio.create_subprocess_exec(
+                            *cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            cwd=agents[agent_id]["workdir"]
+                        )
+                        agents[agent_id]["process"] = process
+                        print(f"Agent {agent_id} process started with PID: {process.pid}")
+
+                        # Start monitoring tasks
+                        asyncio.create_task(monitor_process_output(agent_id, process.stdout, "stdout"))
+                        asyncio.create_task(monitor_process_output(agent_id, process.stderr, "stderr"))
+                        asyncio.create_task(monitor_process_exit(agent_id, process))
+
+                    except Exception as e:
+                        print(f"Failed to start agent {agent_id}: {e}") # Indentation fixed here
+                        set_agent_state(agent_id, "stopped") # Use setter
+                        agents[agent_id]["process"] = None
+                        await broadcast_to_ui(get_current_state())
+
+            elif command == "stop_agent":
+                agent_id = payload.get("agent_id")
+                if agent_id in agents and agents[agent_id].get("process"):
+                    print(f"UI requested to stop agent {agent_id}")
+                    if set_agent_state(agent_id, "stopping"): # Use setter
+                        await broadcast_to_ui(get_current_state())
+                        process = agents[agent_id]["process"]
+                        if process.returncode is None:
+                            try:
+                                # Send SIGINT (Ctrl+C equivalent) first for graceful shutdown
+                                process.terminate()
+                                print(f"Sent SIGTERM to agent {agent_id} process {process.pid}")
+                                # Monitor_process_exit will handle the state change to 'stopped'
+                            except ProcessLookupError:
+                                print(f"Process {process.pid} already exited.")
+                                set_agent_state(agent_id, "stopped") # Mark as stopped if process gone
+                                await broadcast_to_ui(get_current_state())
+                            except Exception as e:
+                                print(f"Error sending SIGTERM to agent {agent_id}: {e}")
+                                set_agent_state(agent_id, "stopped") # Mark agent as stopped if signal fails
+                                await broadcast_to_ui(get_current_state())
+                    else:
+                         print(f"Agent {agent_id} process already exited.")
+                         set_agent_state(agent_id, "stopped") # Ensure state is correct
+                         await broadcast_to_ui(get_current_state())
 
             elif command == "terminate_agent":
                 agent_id = payload.get("agent_id")
-                if agent_id in agents and agents[agent_id].get("process"):
+                if agent_id in agents:
                     print(f"UI requested to terminate agent {agent_id}")
-                    agents[agent_id]["status"] = "terminating"
-                    await broadcast_to_ui(get_current_state()) # Update UI
+                    original_status = agents[agent_id]['status']
+                    if set_agent_state(agent_id, "terminating"):
+                        await broadcast_to_ui(get_current_state())
 
-                    process = agents[agent_id]["process"]
-                    if process.returncode is None: # Check if process is still running
-                        print(f"Terminating agent process {process.pid} for agent {agent_id}...")
-                        try:
-                            process.terminate() # Send SIGTERM
-                            # Wait briefly for graceful shutdown
+                        process = agents[agent_id].get("process")
+                        if process and process.returncode is None:
+                            print(f"Terminating agent process {process.pid} for agent {agent_id}...")
                             try:
-                                await asyncio.wait_for(process.wait(), timeout=5.0)
-                                print(f"Agent process {process.pid} terminated gracefully.")
-                            except asyncio.TimeoutError:
-                                print(f"Agent process {process.pid} did not terminate gracefully, sending SIGKILL...")
-                                process.kill() # Force kill if terminate fails
-                                await process.wait() # Wait for kill to complete
-                                print(f"Agent process {process.pid} killed.")
-                        except ProcessLookupError:
-                             print(f"Process {process.pid} already exited.")
-                        except Exception as e:
-                            print(f"Error during termination of agent {agent_id} (PID {process.pid}): {e}")
-                            # Attempt to kill again if error occurred during terminate
-                            try:
-                                if process.returncode is None:
-                                    process.kill()
+                                process.terminate() # SIGTERM
+                                try:
+                                    await asyncio.wait_for(process.wait(), timeout=5.0)
+                                    print(f"Agent process {process.pid} terminated gracefully.")
+                                except asyncio.TimeoutError:
+                                    print(f"Agent process {process.pid} did not terminate gracefully, killing...")
+                                    process.kill() # SIGKILL
                                     await process.wait()
-                            except Exception as kill_e:
-                                print(f"Error during kill attempt for agent {agent_id}: {kill_e}")
+                                    print(f"Agent process {process.pid} killed.")
+                            except ProcessLookupError:
+                                print(f"Process {process.pid} already exited.")
+                            except Exception as e:
+                                print(f"Error terminating agent {agent_id}: {e}")
+                                # State remains 'terminating', cleanup happens below
 
+                        # Clean up agent resources regardless of process state
+                        if agent_id in agent_connections:
+                            await agent_connections[agent_id].close()
+                            del agent_connections[agent_id]
+
+                        # Mark associated task as incomplete if agent was busy
+                        if original_status == 'busy':
+                            task_id_to_incomplete = next((tid for tid, tdata in tasks.items() if tdata.get("assigned_agent_id") == agent_id), None)
+                            if task_id_to_incomplete:
+                                print(f"Marking task {task_id_to_incomplete} as incomplete due to agent termination.")
+                                set_task_state(task_id_to_incomplete, "incomplete")
+                                tasks[task_id_to_incomplete]["assigned_agent_id"] = None
+
+                        # Clean up work directory
+                        if "workdir" in agents[agent_id]:
+                            workdir = agents[agent_id]["workdir"]
+                            try:
+                                import shutil
+                                shutil.rmtree(workdir)
+                                print(f"Deleted work directory for agent {agent_id}: {workdir}")
+                            except Exception as e:
+                                print(f"Error deleting work directory for agent {agent_id}: {e}")
+
+                        # Remove agent entry AFTER cleanup
+                        del agents[agent_id]
+                        await broadcast_to_ui(get_current_state()) # Broadcast final state after removal
                     else:
-                        print(f"Agent process for {agent_id} already exited with code {process.returncode}.")
-
-                    # Final cleanup handled by monitor_process_exit or websocket disconnect
-                    # We just mark as terminating here. The monitor task will remove it.
-                elif agent_id in agents:
-                     print(f"Terminate request for agent {agent_id} but process not found or already exited.")
-                     # Clean up if agent exists but process doesn't
-                     if agents[agent_id]["status"] != "terminating": # Avoid race condition with monitor_process_exit
-                         del agents[agent_id]
-                         if agent_id in agent_connections: del agent_connections[agent_id]
-                         await broadcast_to_ui(get_current_state())
+                        print(f"Could not transition agent {agent_id} to terminating state.")
                 else:
                     print(f"Terminate request for unknown agent ID: {agent_id}")
 
@@ -255,21 +410,71 @@ async def websocket_ui_endpoint(websocket: WebSocket):
                 if task_desc:
                     task_id = str(uuid.uuid4())
                     print(f"UI added task {task_id}: {task_desc}")
-                    # Initialize task with history and watchers keys, even if empty initially
                     tasks[task_id] = {
                         "id": task_id,
                         "description": task_desc,
-                        "status": "new",
+                        "status": "incomplete", # Initial state is now incomplete
                         "assigned_agent_id": None,
                         "result": None,
-                        "history": "", # Will be set properly on assignment
+                        "history": "",
                         "watching_uis": set()
                     }
                     await broadcast_to_ui(get_current_state())
-                    await assign_task_if_possible() # Try assigning immediately
+                    await assign_task_if_possible() # Try assigning if in auto mode
                 else:
                     print("Add task request missing description.")
-            
+
+            elif command == "delete_task":
+                task_id = payload.get("task_id")
+                if task_id in tasks:
+                    print(f"UI requested to delete task {task_id}")
+                    # Add validation? e.g., prevent deleting 'running' tasks? For now, allow deletion.
+                    if set_task_state(task_id, "terminating"): # Mark for termination first
+                        # Clean up watchers
+                        if 'watching_uis' in tasks[task_id]:
+                            tasks[task_id]['watching_uis'].clear()
+                        del tasks[task_id]
+                        print(f"Task {task_id} deleted.")
+                        await broadcast_to_ui(get_current_state())
+                    else:
+                         print(f"Could not transition task {task_id} to terminating for deletion.")
+                else:
+                    print(f"Delete request for unknown task ID: {task_id}")
+
+            elif command == "set_assignment_mode":
+                global auto_assign_mode
+                mode = payload.get("mode")
+                if mode == "auto":
+                    auto_assign_mode = True
+                    print("Assignment mode set to AUTO")
+                    await broadcast_to_ui({"type": "mode_update", "mode": "auto"})
+                    await assign_task_if_possible() # Try assigning immediately
+                elif mode == "manual":
+                    auto_assign_mode = False
+                    print("Assignment mode set to MANUAL")
+                    await broadcast_to_ui({"type": "mode_update", "mode": "manual"})
+                else:
+                    print(f"Invalid assignment mode received: {mode}")
+
+            elif command == "manual_assign_task":
+                task_id = payload.get("task_id")
+                agent_id = payload.get("agent_id")
+                if auto_assign_mode:
+                    print("Warning: Manual assignment attempted while in AUTO mode.")
+                    # Optionally send an error back to UI
+                    await websocket.send_json({"type": "error", "payload": {"message": "Cannot manually assign in AUTO mode."}})
+                elif task_id and agent_id:
+                    print(f"UI requested manual assignment of task {task_id} to agent {agent_id}")
+                    success = await _assign_task_to_agent(task_id, agent_id)
+                    if not success:
+                        print(f"Manual assignment failed for task {task_id} to agent {agent_id}")
+                        # Optionally send failure feedback to UI
+                        await websocket.send_json({"type": "error", "payload": {"message": f"Failed to assign task {task_id} to agent {agent_id}."}})
+                else:
+                    print("Manual assign request missing task_id or agent_id.")
+                    await websocket.send_json({"type": "error", "payload": {"message": "Missing task_id or agent_id for manual assignment."}})
+
+
             elif command == "get_progress":
                 task_id = payload.get("task_id")
                 if task_id in tasks:
@@ -326,36 +531,50 @@ async def monitor_process_exit(agent_id: str, process):
     return_code = await process.wait()
     print(f"Agent process {process.pid} for agent {agent_id} exited with code {return_code}.")
 
-    # Clean up agent state
-    if agent_id in agents:
-        # Clean up work directory
-        if "workdir" in agents[agent_id]:
-            workdir = agents[agent_id]["workdir"]
-            try:
-                import shutil
-                shutil.rmtree(workdir)
-                print(f"Cleaned up work directory for agent {agent_id}: {workdir}")
-            except Exception as e:
-                print(f"Error cleaning up work directory for agent {agent_id}: {e}")
+    if agent_id not in agents:
+        print(f"Agent {agent_id} (PID {process.pid}) exited but was already removed/terminated.")
+        return
 
-        # Update status if not already terminating (e.g., crashed)
-        if agents[agent_id]["status"] != "terminating":
-             agents[agent_id]["status"] = "exited_unexpectedly" if return_code != 0 else "exited_normally"
-        agents[agent_id]["process"] = None # Remove process handle
+    agent_current_status = agents[agent_id]['status']
 
-        # If status is terminating, remove the agent entry completely after exit
-        if agents[agent_id]["status"] == "terminating":
-            print(f"Removing terminated agent {agent_id} from registry.")
-            del agents[agent_id]
-            if agent_id in agent_connections: # Should be cleaned by websocket disconnect, but double-check
-                del agent_connections[agent_id]
-        else:
-             # Keep the entry but mark status if it exited unexpectedly
-             print(f"Agent {agent_id} marked as exited with status: {agents[agent_id]['status']}")
+    # Determine final agent state based on exit code and current status
+    final_agent_state = 'stopped' # Default assumption
+    if agent_current_status == 'terminating':
+        # Termination was requested, cleanup already handled by terminate_agent command
+        print(f"Agent {agent_id} process exited during termination.")
+        # Agent entry should have been removed by terminate_agent, but check just in case
+        if agent_id in agents: del agents[agent_id]
+        if agent_id in agent_connections: del agent_connections[agent_id]
+        await broadcast_to_ui(get_current_state())
+        return # Exit early, termination handles cleanup
+    elif agent_current_status == 'stopping':
+        # For stopping state, exit code 1 is expected (SIGTERM)
+        final_agent_state = 'stopped'
+        print(f"Agent {agent_id} stopped normally (exit code {return_code})")
+    elif return_code != 0:
+        final_agent_state = 'stopped' # Process crashed or exited unexpectedly
 
-        await broadcast_to_ui(get_current_state()) # Update UI about the exit/removal
-    else:
-        print(f"Agent {agent_id} (PID {process.pid}) exited but was already removed from registry.")
+    # Set final agent state
+    set_agent_state(agent_id, final_agent_state)
+
+    # If agent was busy and didn't exit cleanly, mark task as incomplete
+    if agent_current_status == 'busy' and return_code != 0:
+        task_id_to_incomplete = next((tid for tid, tdata in tasks.items() if tdata.get("assigned_agent_id") == agent_id), None)
+        if task_id_to_incomplete:
+            print(f"Marking task {task_id_to_incomplete} as incomplete due to agent {agent_id} error exit.")
+            if set_task_state(task_id_to_incomplete, "incomplete"):
+                 tasks[task_id_to_incomplete]["assigned_agent_id"] = None
+            else:
+                 print(f"Failed to set task {task_id_to_incomplete} to incomplete.")
+
+    # Clean up websocket connection if it still exists
+    if agent_id in agent_connections:
+        await agent_connections[agent_id].close()
+        del agent_connections[agent_id]
+        agents[agent_id]["websocket"] = None # Clear reference
+
+    await broadcast_to_ui(get_current_state())
+    await assign_task_if_possible() # Check if the now stopped/errored agent frees up a task slot (unlikely but check)
 
 
 @app.websocket("/ws/agent/{agent_id}")
@@ -369,10 +588,21 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
     await websocket.accept()
     agent_connections[agent_id] = websocket
     agents[agent_id]["websocket"] = websocket # Store websocket object
-    agents[agent_id]["status"] = "idle"
-    print(f"Agent {agent_id} connected and set to idle.")
+    
+    # Set state to idle if it was starting
+    if agents[agent_id]["status"] == "starting":
+        set_agent_state(agent_id, "idle")
+    else:
+        # If agent reconnects unexpectedly (e.g. after being stopped), reset to idle if possible
+        if agents[agent_id]["status"] == 'stopped':
+             print(f"Agent {agent_id} reconnected with status {agents[agent_id]['status']}, setting to idle.")
+             set_agent_state(agent_id, "idle")
+        else:
+             print(f"Agent {agent_id} connected with unexpected status: {agents[agent_id]['status']}")
+             # Consider closing connection or setting to error? For now, allow but log.
+
     await broadcast_to_ui(get_current_state())
-    await assign_task_if_possible() # Check if tasks are waiting
+    await assign_task_if_possible() # Check if tasks are waiting for this now idle agent
 
     try:
         while True:
@@ -381,28 +611,32 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
             message_type = data.get("type")
             payload = data.get("payload", {})
 
-            if message_type == "status_update":
-                new_status = payload.get("status")
-                if new_status:
-                    agents[agent_id]["status"] = new_status
-                    print(f"Agent {agent_id} status updated to: {new_status}")
-                    await broadcast_to_ui(get_current_state())
+            # Note: Agent should not send status_update, server manages state based on events/commands
+            # if message_type == "status_update": ... (Removed)
 
-            elif message_type == "task_result":
+            if message_type == "task_result":
                 task_id = payload.get("task_id")
                 result = payload.get("result")
-                status = payload.get("status", "completed") # completed or failed
-                if task_id in tasks:
+                agent_reported_status = payload.get("status", "completed") # completed or failed
+
+                if task_id in tasks and tasks[task_id].get("assigned_agent_id") == agent_id:
+                    final_task_status = "completed" if agent_reported_status == "completed" else "incomplete"
+
                     tasks[task_id]["result"] = result
-                    tasks[task_id]["status"] = status
+                    set_task_state(task_id, final_task_status) # Use setter
                     tasks[task_id]["assigned_agent_id"] = None # Unassign
-                    tasks[task_id]["watching_uis"] = set() # Clear watchers on completion/failure
-                    agents[agent_id]["status"] = "idle" # Agent becomes idle
-                    print(f"Task {task_id} finished by agent {agent_id} with status: {status}. Cleared watchers.")
+                    if 'watching_uis' in tasks[task_id]: tasks[task_id]["watching_uis"].clear() # Clear watchers
+
+                    set_agent_state(agent_id, "idle")  # Agent becomes idle
+
+                    print(f"Task {task_id} finished by agent {agent_id}. Agent reported: {agent_reported_status}, Final status: {final_task_status}.")
                     await broadcast_to_ui(get_current_state()) # Broadcast general state
                     await assign_task_if_possible() # Check for next task
-                else:
-                    print(f"Received result for unknown task ID: {task_id}")
+                elif task_id not in tasks:
+                    print(f"Agent {agent_id} sent result for unknown task ID: {task_id}")
+                else: # Task exists but not assigned to this agent
+                     print(f"Agent {agent_id} sent result for task {task_id} which is assigned to {tasks[task_id].get('assigned_agent_id')}. Ignoring.")
+
 
             elif message_type == "progress_update":
                 task_id = payload.get("task_id")
@@ -411,11 +645,6 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
                     if 'history' not in tasks[task_id]:
                         tasks[task_id]['history'] = "" # Initialize if missing (edge case)
                         print(f"Warning: Initialized missing history for task {task_id} during progress update.")
-
-                    # Check if this is the first assistant token for this task history
-                    # If history only contains 'user\n|||\n...', add the separator
-                    if tasks[task_id]['history'].count('\n|||\n') < 2:
-                        tasks[task_id]['history'] += "\n|||\n" # Correctly indented line
 
                     tasks[task_id]['history'] += token # Correctly indented line
 
@@ -438,18 +667,37 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
         print(f"Agent {agent_id} disconnected.")
     except Exception as e:
         print(f"Error in agent {agent_id} websocket: {e}")
-        agents[agent_id]["status"] = "error" # Mark agent as errored on exception
+        # State transition and task incompletion handled by finally block
     finally:
-        # Cleanup on disconnect or error
+        print(f"Agent {agent_id} websocket handler closing.")
+        original_status = agents[agent_id]['status'] if agent_id in agents else 'unknown'
+
+        # Mark agent as stopped on unexpected disconnect, unless terminating/stopping
+        if agent_id in agents and agents[agent_id]['status'] not in ['terminating', 'stopping', 'stopped']:
+             set_agent_state(agent_id, "stopped")
+
+        # If agent was busy, mark its task as incomplete
+        if original_status == 'busy':
+            task_id_to_incomplete = next((tid for tid, tdata in tasks.items() if tdata.get("assigned_agent_id") == agent_id), None)
+            if task_id_to_incomplete:
+                print(f"Marking task {task_id_to_incomplete} as incomplete due to agent {agent_id} disconnect.")
+                if set_task_state(task_id_to_incomplete, "incomplete"):
+                    tasks[task_id_to_incomplete]["assigned_agent_id"] = None
+                else:
+                    print(f"Failed to set task {task_id_to_incomplete} to incomplete.")
+
+        # Cleanup connection reference
         if agent_id in agent_connections:
             del agent_connections[agent_id]
-        if agent_id in agents:
-            # Keep agent entry but mark as disconnected/error unless explicitly terminated
-            if agents[agent_id]["status"] != "terminating":
-                 agents[agent_id]["status"] = "disconnected_error"
-            agents[agent_id]["websocket"] = None # Remove websocket object
-            print(f"Cleaned up connection for agent {agent_id}. Status: {agents[agent_id]['status']}")
+        if agent_id in agents: # Check agent wasn't deleted by termination
+             agents[agent_id]["websocket"] = None
+             print(f"Cleaned up connection for agent {agent_id}. Final status: {agents[agent_id]['status']}")
+        else:
+             print(f"Agent {agent_id} already removed, skipping final status log.")
+
         await broadcast_to_ui(get_current_state())
+        # Don't try to assign task here, monitor_process_exit handles agent state changes more reliably
+
 # --- Root Endpoint ---
 @app.get("/")
 async def get_root():

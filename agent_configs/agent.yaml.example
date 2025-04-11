@@ -1,10 +1,9 @@
 
 # ChatStreamer configuration file path
-streamer_config: ../model_configs/gemini.yaml.example
+streamer_config: ../model_configs/openrouter.yaml.example
 
-# Prompt template file paths
+# System prompt template file path
 system_prompt_template: ../prompts/system.j2
-user_prompt_template: ../prompts/user.j2
 
 # Tools configuration
 tools:
