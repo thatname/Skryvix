@@ -1,92 +1,129 @@
 
-from tool import Tool
-import sys
-from io import StringIO
-import os
-class PythonTool(Tool):
-    def name(self)->str:
+from subprocess_tool import SubProcessTool
+
+class PythonTool(SubProcessTool):
+    """
+    Python interactive shell tool class.
+    Inherits from SubProcessTool to handle subprocess management.
+    """
+    
+    def __init__(self):
+        """
+        Initialize Python tool with appropriate command and end marker.
+        """
+        shell_cmd = 'python -i'  # Python interactive mode
+        command_end_marker = '>>> '  # Python REPL prompt
+        super().__init__(shell_cmd, command_end_marker)
+
+    def name(self) -> str:
+        """
+        Returns the tool's name.
+
+        Returns:
+            str: Tool name
+        """
         return "python"
+
     def description(self) -> str:
-        return """* python - Execute python code. For example: 
+        """
+        Returns the tool's description.
+
+        Returns:
+            str: Tool description
+        """
+        return """* python - Python Interactive Shell. Example:
 ```python
-def display_file(path)
-    with open(, 'r') as f:
-        print(f.read())
-display_file('c:/repository/file.cpp')
+x = 1 + 1
+print(x)
+import math
+print(math.pi)
+[i * 2 for i in range(5)]
 ```invoke
-The python interpreter is persistent, You can reuse python funciton you've already written. 
-In order to complete your development task, you can write python code to manipulate the code within this repository's source files.
+This tool provides an interactive Python shell for executing Python code and expressions.
 """
 
-    async def use(self, args: str):
-        # Create pipe for output capture
-        r, w = os.pipe()
-        # Save original stdout
-        old_stdout = sys.stdout
-        # Create StringIO object to capture output
-        redirected_output = StringIO()
-        sys.stdout = redirected_output
 
-        try:
-            # Execute Python code
-            exec(args)
-            # Get captured output
-            output = redirected_output.getvalue()
-            if not output:
-                output = "Python code executed successfully, no output"
-        except Exception as e:
-            output = f"Exception : {str(e)}"
-        finally:
-            # Restore original stdout
-            sys.stdout = old_stdout
-            redirected_output.close()
-        yield output
-
-def test():
-    print("Entering main function")
-    # Create PythonTool instance
+async def main():
+    # Create Python tool instance
     python_tool = PythonTool()
     
-    # Display tool description
+    # Print tool description
     print("Tool description:", python_tool.description())
-    print("\n=== Test Cases ===\n")
+    print("\n" + "="*50 + "\n")
 
-    # Test case 1: Simple print
-    print("Test 1 - Simple print:")
-    code1 = 'print("Hello, Python Tool!")'
-    print("Code:", code1)
-    print("Output:", python_tool.use(code1))
-    print()
+    # Test case 1: Basic arithmetic
+    print("Test case 1: Basic arithmetic")
+    commands = [
+        "2 + 2",
+        "3 * 4",
+        "10 / 2"
+    ]
+    for cmd in commands:
+        print(f"Executing: {cmd}")
+        print("-" * 30)
+        async for char in python_tool.use(cmd):
+            print(char, end='', flush=True)
+        print("\n" + "="*50 + "\n")
 
-    # Test case 2: Multiple lines of code
-    print("Test 2 - Multiple lines of code:")
-    code2 = '''
-for i in range(3):
-    print(f"Count: {i}")
-'''
-    print("Code:", code2)
-    print("Output:", python_tool.use(code2))
-    print()
+    # Test case 2: Variable assignment and usage
+    print("Test case 2: Variable assignment and usage")
+    commands = [
+        "x = 42",
+        "x * 2",
+        "x + 8"
+    ]
+    for cmd in commands:
+        print(f"Executing: {cmd}")
+        print("-" * 30)
+        async for char in python_tool.use(cmd):
+            print(char, end='', flush=True)
+        print("\n" + "="*50 + "\n")
 
-    # Test case 3: Mathematical calculation
-    print("Test 3 - Mathematical calculation:")
-    code3 = '''
-result = 0
-for i in range(1, 5):
-    result += i
-print(f"Sum of 1 to 4 is: {result}")
-'''
-    print("Code:", code3)
-    print("Output:", python_tool.use(code3))
-    print()
+    # Test case 3: List operations
+    print("Test case 3: List operations")
+    commands = [
+        "lst = [1, 2, 3, 4, 5]",
+        "lst.append(6)",
+        "lst",
+        "[x * 2 for x in lst]"
+    ]
+    for cmd in commands:
+        print(f"Executing: {cmd}")
+        print("-" * 30)
+        async for char in python_tool.use(cmd):
+            print(char, end='', flush=True)
+        print("\n" + "="*50 + "\n")
 
-    # Test case 4: Error handling
-    print("Test 4 - Error handling:")
-    code4 = 'print(undefined_variable)'
-    print("Code:", code4)
-    print("Output:", python_tool.use(code4))
+    # Test case 4: Import and use module
+    print("Test case 4: Import and use module")
+    commands = [
+        "import math",
+        "math.pi",
+        "math.cos(0)",
+        "math.sin(math.pi/2)"
+    ]
+    for cmd in commands:
+        print(f"Executing: {cmd}")
+        print("-" * 30)
+        async for char in python_tool.use(cmd):
+            print(char, end='', flush=True)
+        print("\n" + "="*50 + "\n")
+
+    # Test case 5: String operations
+    print("Test case 5: String operations")
+    commands = [
+        's = "Hello, World!"',
+        'len(s)',
+        's.upper()',
+        's.split(", ")'
+    ]
+    for cmd in commands:
+        print(f"Executing: {cmd}")
+        print("-" * 30)
+        async for char in python_tool.use(cmd):
+            print(char, end='', flush=True)
+        print("\n" + "="*50 + "\n")
 
 if __name__ == "__main__":
-    print("Program started")
-    test()
-    print("Program ended")
+    import asyncio
+    asyncio.run(main())
