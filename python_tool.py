@@ -42,6 +42,21 @@ print(math.pi)
 This tool provides an interactive Python shell for executing Python code and expressions.
 """
 
+    async def use(self, command: str):
+        """
+        Override the use method to handle double newlines in the command.
+        
+        Args:
+            command (str): The command to execute
+            
+        Yields:
+            Output from the command execution
+        """
+        # Replace double newlines with single newlines
+        processed_command = command.replace('\n\n', '\n')
+        # Call parent class's use method with processed command
+        async for output in super().use(processed_command):
+            yield output
 
 async def main():
     # Create Python tool instance

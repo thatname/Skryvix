@@ -158,7 +158,7 @@ class Agent:
         if match:
             tool_name = match.group(1)
             args = match.group(2)
-            if tool_name == "final":
+            if tool_name == "finish":
                 yield ""
             elif tool_name in self.tool_map:
                 tool = self.tool_map[tool_name]
@@ -178,7 +178,9 @@ class Agent:
                 except Exception as e:
                     yield f"\nError executing tool '{tool_name}': {str(e)}\n"
             else:
-                yield f"""Error: The tool name "{tool_name}" is wrong."""
+                yield f"""Error: ```{tool_name}
+         ^ There is no such tool named {tool_name} !!!
+"""
         else:
             yield """I can not find the tool calling pattern in your response or syntax error!
 The correct tool calling format is
