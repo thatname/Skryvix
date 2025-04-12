@@ -40,7 +40,7 @@ frame variable  # Display variables in current frame
 next  # Step over
 continue  # Continue execution
 quit  # Exit debugger
-```invoke
+```
 This tool provides an interactive interface to the LLDB debugger for debugging C/C++/Objective-C programs.
 """
 

@@ -153,11 +153,11 @@ class Agent:
             str: True if a tool was called, False otherwise
         """
         # Match XML-style tool calls
-        tool_pattern = r'```(.*?)\n(.*?)```invoke'
+        tool_pattern = r'```([a-z]*?)\n(.*?)```'
         match = re.search(tool_pattern, content, re.DOTALL)
         if match:
             tool_name = match.group(1)
-            args = match.group(2).strip()
+            args = match.group(2)
             if tool_name == "final":
                 yield ""
             elif tool_name in self.tool_map:
@@ -184,8 +184,7 @@ class Agent:
 The correct tool calling format is
 ```tool_name
 # Inside the block, write the code or content.
-```invoke
-Remember the 'invoke' at the end!
+```
 Now you can try again, utilize tools to complete your task!
 """
         

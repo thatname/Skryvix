@@ -38,7 +38,7 @@ print(x)
 import math
 print(math.pi)
 [i * 2 for i in range(5)]
-```invoke
+```
 This tool provides an interactive Python shell for executing Python code and expressions.
 """
 
