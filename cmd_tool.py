@@ -28,32 +28,26 @@ class CmdTool(Tool):
         
         # Create persistent process
         shell_cmd = 'cmd.exe /K chcp 65001' if os.name == 'nt' else 'bash'
-        try:
-            self.process = subprocess.Popen(
-                shell_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Merge stderr into stdout
-                text=False,
-                bufsize=0,
-                #universal_newlines=True
-            )
-            print(f"Process started: PID={self.process.pid}")
-        except Exception as e:
-            print(f"Process start failed: {str(e)}")
-            raise
+        
+        self.process = subprocess.Popen(
+            shell_cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout
+            text=False,
+            bufsize=0,
+            #universal_newlines=True
+        )
 
         # Start output reader thread
         self.reader_thread = threading.Thread(target=self._output_reader, daemon=True)
         self.reader_thread.start()
-        print("Output reader thread started")
 
     def _output_reader(self):
         """
         Background thread function, continuously reads process output.
         Accumulates bytes and decodes them as UTF-8 when complete characters are formed.
         """
-        print("Started reading output")
         # Buffer for accumulating bytes
         byte_buffer = bytearray()
         
@@ -123,9 +117,9 @@ Response of this tool will include all the file names inside current direction, 
             #print("Command sent")
 
             start_time = time.time()
-            last_output = ""
             last_change_time = start_time
 
+            last_line = ""
             while True:
                 current_time = time.time()
                 # Check if total timeout exceeded
@@ -133,20 +127,28 @@ Response of this tool will include all the file names inside current direction, 
                     yield "Command execution timed out"
                     break
                         # Clear all content in queue
+                last_output = ""
                 while not self.output_queue.empty():
                     try:
                         output = self.output_queue.get_nowait()
-                        yield output
+                        last_output += output
+                        
+                        if output == "\n":
+                            last_line = ""
+                        else:
+                            last_line += output
                         last_change_time = current_time
                     except queue.Empty:
                         break
+                
+                yield last_output
 
                 # If output hasn't changed for a while, consider command complete
-                if current_time - last_change_time > no_change_timeout and output.endswith(">"):
+                if current_time - last_change_time > no_change_timeout and last_line.endswith(">"):
                     break
 
                 # Brief sleep to avoid excessive CPU usage
-                time.sleep(0.5)
+                time.sleep(0.1)
 
         except Exception as e:
             yield f"Command execution failed: {str(e)}"
