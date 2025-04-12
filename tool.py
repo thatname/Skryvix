@@ -11,5 +11,14 @@ class Tool(ABC):
         pass
 
     @abstractmethod
-    def use(self, args: str) -> str:
+    async def use(self, args: str):
+        """
+        Execute the tool asynchronously
+        
+        Args:
+            args (str): Arguments for the tool
+            
+        Yields:
+            str: Output from the tool execution
+        """
         pass

@@ -139,33 +139,55 @@ class Agent:
         tool_descriptions = [tool.description() for tool in self.tools]
         return self.system_prompt_template.render(tools=tool_descriptions)
     
-    async def _process_tool_call(self, content: str) -> Tuple[Optional[str], Optional[str]]:
+    async def _process_tool_call(self, content: str) -> str:
         """
         Process potential tool calls in the content using XML format
         
         Args:
             content (str): Content to process
             
+        Yields:
+            str: Output characters one by one
+            
         Returns:
-            Tuple[Optional[str], Optional[str]]: (Tool execution result, Remaining content after tool call)
-                                               or (None, None) if no tool call found
+            str: True if a tool was called, False otherwise
         """
         # Match XML-style tool calls
-        tool_pattern = r'```(.*?)\n(.*?)```\n'
+        tool_pattern = r'```(.*?)\n(.*?)```invoke'
         match = re.search(tool_pattern, content, re.DOTALL)
         if match:
-            tool_name = match.group(1).strip()
-            args = match.group(2)
-            print
-            if tool_name in self.tool_map:
+            tool_name = match.group(1)
+            args = match.group(2).strip()
+            if tool_name == "final":
+                yield ""
+            elif tool_name in self.tool_map:
                 tool = self.tool_map[tool_name]
+                
                 try:
-                    result = tool.use(args)
-                    return f"You invoked tool '{tool_name}', result is:\n" + result
+                    # Start message
+                    yield f"You invoked tool '{tool_name}' result is:\n"
+
+                    # Process tool output
+                    async for output in tool.use(args):
+                        for char in output:
+                            yield char
+
+                    # Add newline after tool output
+                    yield "\n"
+
                 except Exception as e:
-                    return f"Error executing tool '{tool_name}': {str(e)}"
-                    
-        return None
+                    yield f"\nError executing tool '{tool_name}': {str(e)}\n"
+            else:
+                yield f"""Error: The tool name "{tool_name}" is wrong."""
+        else:
+            yield """I can not find the tool calling pattern in your response or syntax error!
+The correct tool calling format is
+```tool_name
+# Inside the block, write the code or content.
+```invoke
+Remember the 'invoke' at the end!
+Now you can try again, utilize tools to complete your task!
+"""
         
     async def __call__(self, user_task: str):
         """
@@ -173,35 +195,43 @@ class Agent:
         
         Args:
             user_task (str): User's task description
+            
+        Yields:
+            str: Response tokens and tool outputs
         """
         try:
-            # Set system prompt
+            # Set system prompt and configure chat streamer
             self.chat_streamer.system_prompt = self._prepare_system_prompt()
-            self.chat_streamer.stop = ['```\n'] # Tool calling by code.
-            # Clear chat history
+            # self.chat_streamer.stop = ['```\n']  # Tool calling by code
             self.chat_streamer.clear_history()
             
-            # Prepare initial user prompt
+            # Initial prompt is the user's task
             prompt = user_task
             
-            # Start streaming conversation
+            # Main conversation loop
             while True:
                 buffer = ""
-                
+                # Stream model's response and accumulate
                 async for token, reasoning in self.chat_streamer(prompt):
                     if not reasoning:
                         buffer += token
                     yield token
                 yield "\n|||\n"
                 
-                result = await self._process_tool_call(buffer + '```\n')
-                if result:
-                    prompt = result
-                    yield prompt + "\n|||\n"
+                # Process any tool calls in the response
+                prompt = ""
+                async for char in self._process_tool_call(buffer + '```\n'):
+                    prompt += char
+                    yield char
+                
+                if prompt != "":
+                    yield "\n|||\n"
                 else:
+                    # No tool call found, end conversation
                     break
+                    
         except Exception as e:
-            yield f"Exception :{e}"
+            yield f"Exception: {str(e)}"
 
 async def async_main(args: argparse.Namespace):
     """

@@ -2,7 +2,7 @@
 from tool import Tool
 import sys
 from io import StringIO
-
+import os
 class PythonTool(Tool):
     def name(self)->str:
         return "python"
@@ -13,32 +13,34 @@ def display_file(path)
     with open(, 'r') as f:
         print(f.read())
 display_file('c:/repository/file.cpp')
-```
+```invoke
 The python interpreter is persistent, You can reuse python funciton you've already written. 
 In order to complete your development task, you can write python code to manipulate the code within this repository's source files.
 """
 
-    def use(self, args: str) -> str:
-        # 保存原始的标准输出
+    async def use(self, args: str):
+        # Create pipe for output capture
+        r, w = os.pipe()
+        # Save original stdout
         old_stdout = sys.stdout
-        # 创建StringIO对象来捕获输出
+        # Create StringIO object to capture output
         redirected_output = StringIO()
         sys.stdout = redirected_output
 
         try:
-            # 执行Python代码
+            # Execute Python code
             exec(args)
-            # 获取捕获的输出
+            # Get captured output
             output = redirected_output.getvalue()
-            return output if output else "Python code executed successfully, no output"
+            if not output:
+                output = "Python code executed successfully, no output"
         except Exception as e:
-            return f"Execution : {str(e)}"
+            output = f"Exception : {str(e)}"
         finally:
-            # 恢复原始的标准输出
+            # Restore original stdout
             sys.stdout = old_stdout
             redirected_output.close()
-
-
+        yield output
 
 def test():
     print("Entering main function")

@@ -79,7 +79,7 @@ class CmdTool(Tool):
 dir
 git add -A
 git commit -m "feat: add splash screen (#173)"
-```
+```invoke
 Response of this tool will include all the file names inside current direction, followed by the git commit result.
 """
 
