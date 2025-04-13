@@ -21,13 +21,14 @@ class SubProcessTool(Tool):
     def description(self) -> str:
         return "Executes and manages long-running shell commands as persistent subprocesses. Provides real-time output streaming and proper process cleanup."
 
-    def __init__(self, shell_cmd, command_end_marker):
+    def __init__(self, shell_cmd, command_end_marker, work_dir=None):
         """
         Initialize subprocess tool with specific shell command and end marker.
 
         Args:
             shell_cmd (str): Shell command to start the subprocess
             command_end_marker (str): Marker that indicates command completion
+            work_dir (str, optional): Working directory for the subprocess. Defaults to None.
         """
         # Store command end marker
         self.command_end_marker = command_end_marker
@@ -47,7 +48,8 @@ class SubProcessTool(Tool):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # Merge stderr into stdout
             text=False,
-            bufsize=0
+            bufsize=0,
+            cwd=work_dir
         )
 
         # Start output reader thread

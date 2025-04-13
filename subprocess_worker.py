@@ -24,7 +24,7 @@ class SubprocessWorker(Worker):
         self.task = None
         self.coroutine = None  # Track the current running task
 
-    async def _execute_command(self, command: str):
+    async def _execute_command(self, command: str, work_dir=None):
         """
         Internal method to execute the command using SubProcessTool.
         
@@ -32,8 +32,12 @@ class SubprocessWorker(Worker):
             command (str): The shell command to execute
         """
         try:
-            # Create subprocess tool with command and a unique end marker
-            self.subprocess_tool = SubProcessTool(command, None)
+            # Create subprocess tool with command, end marker and work path
+            self.subprocess_tool = SubProcessTool(
+                command,
+                None,
+                work_dir=work_dir
+            )
             # Execute command and process output tokens
             async for token in self.subprocess_tool.use(None):
                 if token:
@@ -49,15 +53,10 @@ class SubprocessWorker(Worker):
             print(f"Error executing command: {str(e)}")
             await self.stop()
             raise
+        finally:
+            self.task = None
 
-    def start(self, task, workspace):
-        """
-        Start the worker with the given task.
-        
-        Args:
-            task: Task description to be used in template rendering
-            workspace: Workspace for processing (not used in this implementation)
-        """
+    def start(self, task, work_dir):
         try:
             # Store task for potential future use
             self.task = task
@@ -69,7 +68,7 @@ class SubprocessWorker(Worker):
             command = self.template.render(task=task)
             
             # Create and store coroutine
-            self.coroutine = asyncio.create_task(self._execute_command(command))
+            self.coroutine = asyncio.create_task(self._execute_command(command, work_dir))
             
         except Exception as e:
             print(f"Error starting worker: {str(e)}")
@@ -101,6 +100,8 @@ class SubprocessWorker(Worker):
                 self.subprocess_tool = None
             except Exception as e:
                 print(f"Error stopping worker: {str(e)}")
+        
+        self.task = None
 
 async def test():
     # 创建一个简单的命令模板
