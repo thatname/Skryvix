@@ -8,7 +8,7 @@ class CustomWorker(Worker):
     def start(self, task, workspace):
         print(f"Worker {self.name} starting task: {task} in workspace: {workspace}")
         
-    def stop(self):
+    async def stop(self):
         print(f"Worker {self.name} stopping")
 
 # Test code
@@ -29,6 +29,20 @@ if __name__ == "__main__":
         worker.stop()
         
         print("\nTest successful!")
-        
+
+    except Exception as e:
+        print(f"Test failed: {str(e)}")
+
+
+    import os
+    # Load YAML config for SubprocessWorker as a string
+    config_path = os.path.join(os.path.dirname(__file__), "worker_configs", "subprocess_worker.yaml")
+    with open(config_path, "r", encoding="utf-8") as f:
+        yaml_config = f.read()
+    try:
+        worker = Worker.create(yaml_config)
+        print("Worker instance created:", worker)
+        print("Type:", type(worker))
+        print("Test successful!")
     except Exception as e:
         print(f"Test failed: {str(e)}")

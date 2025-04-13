@@ -19,7 +19,7 @@ class Worker(ABC):
         pass
     
     @abstractmethod
-    def stop(self):
+    async def stop(self):
         """
         Stop the worker.
         """
