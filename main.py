@@ -37,7 +37,7 @@ except Exception as e:
     print(f"Error loading tasks: {e}")
 
 # --- State Tracking ---
-active_workers: Dict[uuid.UUID, Dict[str, Any]] = {}  # {task_id: {"worker": Worker, "async_task": asyncio.Task, "workspace": WorkSpace}}
+active_workers: Dict[uuid.UUID, Dict[str, Any]] = {}  # {task_id: {"worker": Worker, "workspace": WorkSpace}}
 
 # --- WebSocket Connection Manager ---
 class ConnectionManager:
@@ -250,10 +250,10 @@ async def start_task(task_id: uuid.UUID, request: Request):
         # Start worker (runs in background)
         # The worker's start method should handle setting the task state to PROCESSING
         # and update history/state via the task object's setters (triggering listeners)
-        async_task = asyncio.create_task(worker.start(task, workspace.path))
+        worker.start(task, workspace.path)
 
         # Store worker and task info
-        active_workers[task_id] = {"worker": worker, "async_task": async_task, "workspace": workspace}
+        active_workers[task_id] = {"worker": worker, "workspace": workspace}
 
         # Notify clients about workspace allocation change
         await websocket_manager.broadcast({"type": "workspaces_updated"})
