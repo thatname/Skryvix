@@ -211,17 +211,17 @@ Now you can try again, utilize tools to complete your task!
             
             # Main conversation loop
             while True:
-                buffer = ""
+                buffer = []
                 # Stream model's response and accumulate
                 async for token, reasoning in self.chat_streamer(prompt):
                     if not reasoning:
-                        buffer += token
+                        buffer.append(token)
                     yield token
                 yield "\n|||\n"
                 
                 # Process any tool calls in the response
                 prompt = ""
-                async for char in self._process_tool_call(buffer + '```\n'):
+                async for char in self._process_tool_call("".join(buffer)):
                     prompt += char
                     yield char
                 
@@ -243,7 +243,31 @@ async def async_main(args: argparse.Namespace):
     """
     #try:
     agent = Agent.create_from_args(args)
-    async for response in agent(args.task):
+    # Determine the task: use arg or read from stdin
+    task_description = args.task
+    if not task_description:
+        print("Please enter the task description (end with '@@@' on a new line):", file=sys.stderr)
+        lines = []
+        while True:
+            try:
+                # Use asyncio's loop to read stdin asynchronously if possible,
+                # but standard sync readline might be okay for initial input.
+                # For simplicity, using sync readline here.
+                line = sys.stdin.readline()
+                if line.endswith("@@@\n"):
+                    break
+                if not line: # EOF
+                    break
+                lines.append(line)
+            except EOFError:
+                break
+        task_description = "".join(lines).strip()
+        if not task_description:
+            print("Error: No task provided either via --task argument or standard input.")
+            sys.exit(1) # Exit if no task is available after trying stdin
+
+    # Call the agent with the determined task
+    async for response in agent(task_description):
         print(response, end='', flush=True)
     #except Exception as e:
     #    print(f"Error in async_main: {str(e)}", file=sys.stderr)
@@ -255,10 +279,11 @@ def main():
     parser = argparse.ArgumentParser(description='Run the AI agent with specified tools')
     parser.add_argument('--model-config', required=True, help='Path to the model configuration file')
     parser.add_argument('--system-prompt-template', required=True, help='Path to the system prompt template file')
-    parser.add_argument('--tool', nargs='+', action=ToolAction, default=[], 
+    parser.add_argument('--tool', nargs='+', action=ToolAction, default=[],
                         help='Tool configuration in format: module.ClassName param1=value1 param2=value2')
-    parser.add_argument('--task', required=True, help='Task description for the agent')
-    
+    # Task argument is now optional, handled in async_main
+    parser.add_argument('--task', help='Task description for the agent (reads from stdin if not provided)')
+
     args = parser.parse_args()
     # Run the async main function
     asyncio.run(async_main(args))

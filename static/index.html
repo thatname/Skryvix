@@ -1,45 +1,106 @@
 <!DOCTYPE html>
-<html>
-    <head>
-        <title>Agent Manager</title>
-        <link rel="stylesheet" href="/static/style.css">
-    </head>
-    <body>
-        <div class="controls">
-             <button id="toggleLayout">Toggle Layout (Vertical/Horizontal)</button>
-        </div>
-        <div id="mainContainer" class="layout-horizontal"> <!-- Default to horizontal -->
-            <div class="panel">
-                <h2>Agent Manager</h2>
-<select id="config-select"></select>
-<button id="createAgent">Create Agent</button>
-            <h3>Agent List</h3>
-            <ul id="agentList" class="agent-list"></ul>
-        </div>
-        <div class="panel">
-            <h2>Task Management</h2>
-            <textarea id="taskDesc" placeholder="Enter new task description" rows="3"></textarea>
-            <button id="addTask">Add Task</button>
-            <div class="mode-switch" style="margin-bottom: 10px; margin-top: 10px;">
-                <label for="autoModeSwitch">Auto Assign Tasks:</label>
-                <input type="checkbox" id="autoModeSwitch" checked>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Runner</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Task Runner Interface</h1>
+
+    <div class="container">
+        <div id="workspace-panel" class="panel">
+            <h2>Workspaces</h2>
+            <div class="controls">
+                <button id="create-workspace-btn">Create Workspace</button>
+                <label for="workspace-count">Set Count:</label>
+                <input type="number" id="workspace-count" min="0" value="0">
+                <button id="set-workspace-count-btn">Set</button>
             </div>
-            <h3>Incomplete Tasks</h3>
-            <ul id="incompleteTasks" class="task-list"></ul>
-            <h3>Running Tasks</h3>
-            <ul id="runningTasks" class="task-list"></ul>
-            <h3>Completed Tasks</h3>
-            <ul id="completedTasks" class="task-list"></ul>
+            <ul id="workspace-list">
+                <!-- Workspace items will be populated here -->
+                <!-- Example:
+                <li>
+                    <span>ID: 0</span>
+                    <span>Path: /path/to/ws0</span>
+                    <span class="status">Status: Idle</span>
+                    <button class="delete-ws-btn" data-ws-id="0">Delete</button>
+                </li>
+                <li>
+                    <span>ID: 1</span>
+                    <span>Path: /path/to/ws1</span>
+                    <span class="status busy">Status: Busy (Task: abc-123)</span>
+                    <button class="delete-ws-btn" data-ws-id="1" disabled>Delete</button>
+                </li>
+                 -->
+            </ul>
         </div>
 
-        <div class="panel" id="progressPanel" style="display: none;">
-            <h2>Task Progress/History</h2>
-            <button id="closeProgressPanel" style="float: right;">Close</button>
-            <h3 id="progressTaskId">Task ID: N/A</h3>
-                <pre id="progressContent">Loading...</pre>
+        <div id="task-panel" class="panel">
+            <h2>Tasks</h2>
+            <div class="controls">
+                <textarea id="task-description" placeholder="Enter task description..."></textarea>
+                <label for="worker-config-select">Worker Config:</label>
+                <select id="worker-config-select">
+                    <!-- Worker config options will be populated here -->
+                </select>
+                <button id="create-task-btn">Create Task</button>
             </div>
-        </div> <!-- Close mainContainer -->
+            <div class="task-lists">
+                <div class="task-list-section">
+                    <h3>Pending</h3>
+                    <ul id="pending-tasks">
+                        <!-- Pending task items -->
+                        <!-- Example:
+                        <li data-task-id="uuid-1">
+                            <span>Desc: Do something...</span>
+                            <button class="start-task-btn">Start</button>
+                            <button class="delete-task-btn">Delete</button>
+                        </li>
+                         -->
+                    </ul>
+                </div>
+                <div class="task-list-section">
+                    <h3>Processing</h3>
+                    <ul id="processing-tasks">
+                        <!-- Processing task items -->
+                        <!-- Example:
+                        <li data-task-id="uuid-2">
+                            <span>Desc: Doing something else...</span>
+                            <button class="stop-task-btn">Stop</button>
+                        </li>
+                         -->
+                    </ul>
+                </div>
+                <div class="task-list-section">
+                    <h3>Complete</h3>
+                    <ul id="complete-tasks">
+                        <!-- Complete task items -->
+                        <!-- Example:
+                        <li data-task-id="uuid-3">
+                            <span>Desc: Did a thing.</span>
+                            <button class="delete-task-btn">Delete</button>
+                        </li>
+                         -->
+                    </ul>
+                </div>
+            </div>
+        </div>
 
-        <script src="/static/script.js"></script>
-    </body>
+        <div id="details-panel" class="panel">
+            <h2>Task Details</h2>
+            <div id="task-details-content">
+                <p>Select a task to view its history.</p>
+                <!-- History will be displayed here -->
+                <!-- Example:
+                <h3>History for Task: uuid-1</h3>
+                <pre>Task started...\nProcessing...\nComplete.</pre>
+                 -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
 </html>

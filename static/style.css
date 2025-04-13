@@ -1,151 +1,183 @@
 body {
     font-family: sans-serif;
-    /* display: flex; Flex handled by mainContainer now */
-    margin: 0; /* Add margin reset */
-    padding: 10px; /* Add some padding */
-    background-color: #f4f4f4; /* Light background */
+    margin: 20px;
+    background-color: #f4f4f4;
 }
 
-.controls {
-    margin-bottom: 10px;
-    padding: 5px;
-    text-align: center; /* Center the button */
+h1, h2, h3 {
+    color: #333;
 }
 
-#mainContainer {
+.container {
     display: flex;
+    gap: 20px; /* Space between panels */
+    flex-wrap: wrap; /* Allow wrapping on smaller screens if needed */
 }
 
-#mainContainer.layout-horizontal {
-    flex-direction: row;
-}
-
-#mainContainer.layout-vertical {
-    flex-direction: column;
-}
-
-/* Adjust panel styles for flex container */
 .panel {
-    border: 1px solid #ccc;
-    padding: 15px; /* Slightly more padding */
-    margin: 10px;
-    min-width: 300px; /* Slightly wider panels */
-    background-color: #fff; /* White background for panels */
-    border-radius: 5px; /* Rounded corners */
-    box-shadow: 2px 2px 5px rgba(0,0,0,0.1); /* Subtle shadow */
-    flex: 1; /* Allow panels to grow */
+    flex: 1; /* Each panel tries to take equal space */
+    min-width: 300px; /* Minimum width before wrapping */
+    background-color: #fff;
+    padding: 15px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    display: flex;
+    flex-direction: column; /* Stack elements vertically within panels */
 }
 
 .panel h2 {
     margin-top: 0;
-    border-bottom: 1px solid #eee; /* Separator line */
+    border-bottom: 1px solid #eee;
     padding-bottom: 10px;
+}
+
+.controls {
     margin-bottom: 15px;
-    color: #333;
-}
-.panel h3 {
-    margin-top: 20px;
-    margin-bottom: 10px;
-    color: #555;
-}
-
-.task-list, .agent-list {
-    list-style: none;
-    padding: 0;
-    max-height: 400px; /* Limit height and add scroll */
-    overflow-y: auto; /* Enable vertical scroll */
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    flex-direction: column; /* Stack controls vertically */
+    gap: 10px; /* Space between controls */
 }
 
-.task-list li, .agent-list li {
-    margin-bottom: 8px; /* More spacing */
-    padding: 8px 10px; /* Adjust padding */
-    border: 1px solid #eee;
-    border-radius: 3px; /* Slightly rounded list items */
-    display: flex; /* Use flexbox for alignment */
-    justify-content: space-between; /* Space out content and button */
-    align-items: center; /* Center items vertically */
-}
-
-/* Status Styling */
-/* Agent Statuses */
-.status-created { background-color: #e0e0ff; border-left: 5px solid #2196F3; } /* Blue - Ready to start */
-.status-starting { background-color: #ffffcc; border-left: 5px solid #FFC107; } /* Yellow - In progress */
-.status-idle { background-color: #e0ffe0; border-left: 5px solid #4CAF50; } /* Green - Ready */
-.status-busy { background-color: #ffe0e0; border-left: 5px solid #F44336; } /* Red - Working */
-.status-stopping { background-color: #ffcc99; border-left: 5px solid #FF9800; } /* Orange - In progress */
-.status-stopped { background-color: #d3d3d3; border-left: 5px solid #808080; } /* Grey - Inactive */
-.status-error { background-color: #ffcccc; border-left: 5px solid #E91E63; } /* Pink/Red - Error */
-.status-terminating { background-color: #ffcc99; border-left: 5px solid #FF9800; } /* Orange - In progress */
-.status-unknown { background-color: #f0f0f0; border-left: 5px solid #aaaaaa; } /* Light Grey - Unknown */
-
-/* Task Statuses (can reuse some agent styles or define separately) */
-.status-new { background-color: #e0e0ff; border-left: 5px solid #2196F3; } /* Blue */
-.status-running { background-color: #ffffcc; border-left: 5px solid #FFC107; } /* Yellow */
-.status-completed { background-color: #d3d3d3; border-left: 5px solid #808080; } /* Grey */
-.status-failed { background-color: #ffcccc; border-left: 5px solid #E91E63; } /* Pink/Red */
-
-/* Input and Buttons */
-input[type="text"] {
-    padding: 8px;
+.controls label {
     margin-right: 5px;
+}
+
+.controls input[type="number"],
+.controls textarea,
+.controls select {
+    padding: 8px;
     border: 1px solid #ccc;
     border-radius: 3px;
-    width: calc(100% - 100px); /* Adjust width considering button */
+    margin-right: 5px; /* Space next to input/select */
 }
 
-button {
+.controls textarea {
+    width: 95%; /* Adjust width as needed */
+    min-height: 60px;
+    resize: vertical;
+}
+
+.controls button {
     padding: 8px 12px;
-    border: none;
-    background-color: #5c87db; /* Button color */
+    background-color: #007bff;
     color: white;
+    border: none;
     border-radius: 3px;
     cursor: pointer;
     transition: background-color 0.2s ease;
 }
 
-button:hover {
-    background-color: #4a6fb1; /* Darker on hover */
+.controls button:hover {
+    background-color: #0056b3;
 }
 
-/* Specific button adjustments */
-#agentList button {
-    padding: 4px 8px; /* Smaller button in list */
-    background-color: #f44336; /* Red for terminate */
-}
-#agentList button:hover {
-    background-color: #d32f2f;
-}
-
-#spawnAgent, #addTask {
-    margin-bottom: 15px; /* Space below main buttons */
+ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    flex-grow: 1; /* Allow lists to fill panel space */
+    overflow-y: auto; /* Add scroll if content overflows */
 }
 
-/* Progress Panel Specific Styles */
-#progressPanel {
-    /* Inherits general .panel styles */
-    /* Add specific styles if needed */
-}
-
-#progressContent {
-    background-color: #f8f8f8; /* Slightly different background */
-    border: 1px solid #ddd;
+li {
+    background-color: #f9f9f9;
+    border: 1px solid #eee;
     padding: 10px;
-    margin-top: 10px;
-    max-height: 500px; /* Adjust max height as needed */
-    overflow-y: auto; /* Enable vertical scroll */
-    white-space: pre-wrap; /* Allow wrapping */
-    word-break: break-all; /* Break long words if necessary */
-    font-family: monospace; /* Use monospace font for better alignment */
+    margin-bottom: 8px;
+    border-radius: 3px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap; /* Allow wrapping within list items */
+    gap: 5px;
 }
 
-/* Ensure textarea fits well */
-textarea#taskDesc {
-    width: calc(100% - 100px); /* Match input width */
-    padding: 8px;
-    margin-right: 5px;
-    border: 1px solid #ccc;
+li span {
+    margin-right: 10px;
+}
+
+li .status.busy {
+    color: orange;
+    font-weight: bold;
+}
+
+li button {
+    padding: 5px 8px;
+    font-size: 0.9em;
+    cursor: pointer;
     border-radius: 3px;
-    vertical-align: middle; /* Align with button */
-    box-sizing: border-box; /* Include padding/border in width */
-    resize: vertical; /* Allow vertical resize */
+}
+
+li .delete-ws-btn,
+li .delete-task-btn {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+}
+li .delete-ws-btn:hover,
+li .delete-task-btn:hover {
+    background-color: #c82333;
+}
+li .delete-ws-btn:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+
+li .start-task-btn {
+    background-color: #28a745;
+    color: white;
+    border: none;
+}
+li .start-task-btn:hover {
+    background-color: #218838;
+}
+
+li .stop-task-btn {
+    background-color: #ffc107;
+    color: #333;
+    border: none;
+}
+li .stop-task-btn:hover {
+    background-color: #e0a800;
+}
+
+
+.task-lists {
+    display: flex;
+    flex-direction: column; /* Stack pending/processing/complete vertically */
+    gap: 15px;
+    flex-grow: 1;
+}
+
+.task-list-section {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px;
+    background-color: #fdfdfd;
+    display: flex;
+    flex-direction: column;
+}
+
+.task-list-section h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #eee;
+    font-size: 1.1em;
+}
+
+#details-panel #task-details-content {
+    flex-grow: 1;
+    overflow-y: auto;
+}
+
+#details-panel pre {
+    background-color: #eee;
+    padding: 10px;
+    border-radius: 4px;
+    white-space: pre-wrap; /* Wrap long lines */
+    word-wrap: break-word;
 }

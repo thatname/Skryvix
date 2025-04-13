@@ -11,7 +11,7 @@ class SubprocessWorker(Worker):
     The template is rendered with the task description and executed as a subprocess.
     """
     
-    def __init__(self, template: str):
+    def __init__(self, template: str, include_stderr: bool):
         """
         Initialize the worker with a command template.
         
@@ -20,6 +20,7 @@ class SubprocessWorker(Worker):
                           The template should expect a 'task' variable.
         """
         self.template = Template(template)
+        self.include_stderr = include_stderr
         self.subprocess_tool = None
         self.task = None
         self.coroutine = None  # Track the current running task
@@ -36,10 +37,11 @@ class SubprocessWorker(Worker):
             self.subprocess_tool = SubProcessTool(
                 command,
                 None,
-                work_dir=work_dir
+                work_dir=work_dir,
+                include_stderr=self.include_stderr
             )
             # Execute command and process output tokens
-            async for token in self.subprocess_tool.use(None):
+            async for token in self.subprocess_tool.use(self.task.description + "\n@@@"):
                 if token:
                     self.task.history += token
                     print(token, end = "")
@@ -120,11 +122,11 @@ async def test():
     Raises:
         Exception: If any error occurs during worker execution
     """
-    template = 'python agent.py --model-config model_configs/openrouter.yaml.example --system-prompt-template prompts/system.j2 --tool python_tool.PythonTool --task "{{ task.description }}"'
+    template = 'python agent.py --model-config model_configs/openrouter.yaml.example --system-prompt-template prompts/system.j2 --tool python_tool.PythonTool'
     
     try:
         # 创建 worker 实例
-        worker = SubprocessWorker(template)
+        worker = SubprocessWorker(template, False)
         
         # 创建 Task 实例
         task = Task(description="Write a snake game into a single HTM file.")
@@ -135,7 +137,7 @@ async def test():
         
         # 让进程运行5秒
         print("Worker running... will stop in 5 seconds")
-        await asyncio.sleep(5)
+        await asyncio.sleep(50)
         
         # 停止 worker
         print("Stopping worker...")

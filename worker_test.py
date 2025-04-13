@@ -8,7 +8,7 @@ class CustomWorker(Worker):
     def start(self, task, workspace):
         print(f"Worker {self.name} starting task: {task} in workspace: {workspace}")
         
-    async def stop(self):
+    def stop(self):
         print(f"Worker {self.name} stopping")
 
 # Test code

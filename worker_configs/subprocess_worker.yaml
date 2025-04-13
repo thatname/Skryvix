@@ -2,3 +2,4 @@ class: subprocess_worker.SubprocessWorker
 params:
   - |
     python agent.py --model-config model_configs/openrouter.yaml.example --system-prompt-template prompts/system.j2 --tool python_tool.PythonTool --task "{{ task.description }}"
+  - false
