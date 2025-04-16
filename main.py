@@ -52,17 +52,25 @@ class ConnectionManager:
         print(f"WebSocket connected: {websocket.client}")
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-        print(f"WebSocket disconnected: {websocket.client}")
+        try:
+            websocket.close()           
+        except Exception as e:
+            print(f"Error closing {websocket.client}: {e}")
+        finally:
+            self.active_connections.remove(websocket)
+            print(f"WebSocket disconnected: {websocket.client}")
 
     async def broadcast(self, message: dict):
+        connections_to_remove: List[WebSocket] = []
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
             except Exception as e:
                 print(f"Error broadcasting to {connection.client}: {e}")
-                # Optionally remove broken connections
-                # self.active_connections.remove(connection)
+                connections_to_remove.append(connection)
+        for connection in connections_to_remove:
+            self.disconnect(connection) # Use disconnect for consistent removal
+        
 
     async def send_personal_message(self, message: dict, websocket: WebSocket):
          try:
