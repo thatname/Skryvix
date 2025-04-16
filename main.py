@@ -8,6 +8,8 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 from typing import List, Dict, Any, Optional
 
 from workspace import WorkspaceManager, WorkSpace
@@ -157,10 +159,50 @@ for task_id, task_obj in task_manager.tasks.items():
     # task_obj.add_listener("description", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "description", old, new)))
 
 
+# --- Directory Watchdog ---
+class FileChangeHandler(FileSystemEventHandler):
+    def __init__(self, websocket_manager):
+        self.websocket_manager = websocket_manager
+
+    async def on_modified(self, event):
+        if not event.is_directory:
+            await self.websocket_manager.broadcast({
+                "type": "directory_changed",
+                "path": str(Path(event.src_path).relative_to(WORKSPACE_ROOT))
+            })
+
+# Initialize watchdog observer
+observer = Observer()
+event_handler = FileChangeHandler(websocket_manager)
+observer.schedule(event_handler, str(WORKSPACE_ROOT), recursive=True)
+observer.start()
+
 # --- API Endpoints ---
+@app.get("/api/directory")
+async def get_directory(path: str = ""):
+    target_path = WORKSPACE_ROOT / path
+    if not target_path.exists():
+        raise HTTPException(status_code=404, detail="Path not found")
+    
+    if not target_path.is_dir():
+        raise HTTPException(status_code=400, detail="Path is not a directory")
+
+    contents = []
+    for item in target_path.iterdir():
+        contents.append({
+            "name": item.name,
+            "type": "directory" if item.is_dir() else "file",
+            "size": item.stat().st_size if item.is_file() else 0
+        })
+    
+    return {
+        "path": str(target_path.relative_to(WORKSPACE_ROOT)),
+        "contents": contents
+    }
 
 # Serve Static Files (HTML, CSS, JS) - Use Path object directly if supported, else convert to string
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount("/workspace_root", StaticFiles(directory=str(WORKSPACE_ROOT)), name="workspace_root")
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
