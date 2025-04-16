@@ -154,19 +154,25 @@ class Agent:
         """
         # Match XML-style tool calls
         tool_pattern = r'```([a-z]*?)\n(.*?)```'
-        match = re.search(tool_pattern, content, re.DOTALL)
-        if match:
+        matches = list(re.finditer(tool_pattern, content, re.DOTALL))
+        tool_called = False # Flag to track if any tool was processed
+
+        # Special case: Yield nothing for valid single 'finish' call
+        if len(matches) == 1 and matches[0].group(1) == "finish":
+            yield ""
+            return
+
+        for match in matches:
+            tool_called = True # Mark that at least one tool was found
             tool_name = match.group(1)
             args = match.group(2)
+            yield f"You invoked tool '{tool_name}'. The result is:\n"            
             if tool_name == "finish":
-                yield ""
+                # if any matches are 'finish' but there's more than 1 match
+                yield "Error: 'finish' tool must be used alone without other tool calls.\n"
             elif tool_name in self.tool_map:
                 tool = self.tool_map[tool_name]
-                
                 try:
-                    # Start message
-                    yield f"You invoked tool '{tool_name}' result is:\n"
-
                     # Process tool output
                     async for output in tool.use(args):
                         for char in output:
@@ -178,10 +184,13 @@ class Agent:
                 except Exception as e:
                     yield f"\nError executing tool '{tool_name}': {str(e)}\n"
             else:
+                # Handle unknown tool name
                 yield f"""Error: ```{tool_name}
          ^ There is no such tool named {tool_name} !!!
 """
-        else:
+                
+        if not tool_called:
+            # This message is yielded only if the loop did not run (no matches)
             yield """I can not find the tool calling pattern in your response or syntax error!
 The correct tool calling format is
 ```tool_name
