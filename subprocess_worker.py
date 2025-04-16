@@ -4,14 +4,14 @@ from subprocess_tool import SubProcessTool
 from jinja2 import Template
 import asyncio
 from task import Task, TaskState
-
+import os
 class SubprocessWorker(Worker):
     """
     A worker that executes shell commands based on a Jinja2 template.
     The template is rendered with the task description and executed as a subprocess.
     """
     
-    def __init__(self, template: str, include_stderr: bool):
+    def __init__(self, template: str):
         """
         Initialize the worker with a command template.
         
@@ -20,7 +20,6 @@ class SubprocessWorker(Worker):
                           The template should expect a 'task' variable.
         """
         self.template = Template(template)
-        self.include_stderr = include_stderr
         self.subprocess_tool = None
         self.task = None
         self.coroutine = None  # Track the current running task
@@ -38,7 +37,6 @@ class SubprocessWorker(Worker):
                 command,
                 None,
                 work_dir=work_dir,
-                include_stderr=self.include_stderr
             )
             # Execute command and process output tokens
             async for token in self.subprocess_tool.use(self.task.description + "\n@@@"):
@@ -67,7 +65,7 @@ class SubprocessWorker(Worker):
             self.task.state = TaskState.PROCESSING
             
             # Render command template with task
-            command = self.template.render(task=task)
+            command = self.template.render(task=task, source_dir=os.path.dirname(os.path.realpath(__file__)))
             
             # Create and store coroutine
             self.coroutine = asyncio.create_task(self._execute_command(command, work_dir))

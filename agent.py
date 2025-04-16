@@ -246,7 +246,8 @@ async def async_main(args: argparse.Namespace):
     # Determine the task: use arg or read from stdin
     task_description = args.task
     if not task_description:
-        print("Please enter the task description (end with '@@@' on a new line):", file=sys.stderr)
+        if not args.worker_mode: # Prompt user in active mode (default)
+            print("Please enter the task description (end with '@@@' on a new line):", file=sys.stderr)
         lines = []
         while True:
             try:
@@ -283,7 +284,7 @@ def main():
                         help='Tool configuration in format: module.ClassName param1=value1 param2=value2')
     # Task argument is now optional, handled in async_main
     parser.add_argument('--task', help='Task description for the agent (reads from stdin if not provided)')
-
+    parser.add_argument('--worker-mode', action="store_true", help='Whether in worker mode')
     args = parser.parse_args()
     # Run the async main function
     asyncio.run(async_main(args))
