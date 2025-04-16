@@ -2,6 +2,9 @@ import asyncio
 import os
 import uuid
 import yaml
+import argparse
+import uvicorn
+from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -11,23 +14,47 @@ from workspace import WorkspaceManager, WorkSpace
 from task import TaskManager, Task, TaskState
 from worker import Worker
 from enum import Enum
+
+# --- Argument Parsing ---
+parser = argparse.ArgumentParser(description="Run the Task Runner FastAPI application.")
+parser.add_argument(
+    "--workspace-root",
+    type=str,
+    help="Path to the root directory for workspaces. Can be absolute or relative to the current working directory.",
+    default=None # Default will be handled below, relative to script dir
+)
+args = parser.parse_args()
+
 # --- Configuration ---
-WORKSPACE_ROOT = "d:/Code/CodeAgent/workspace_root"
-TASKS_YAML_PATH = os.path.join(WORKSPACE_ROOT, "tasks.yaml")
-WORKER_CONFIGS_DIR = "d:/Code/CodeAgent/worker_configs"
-STATIC_DIR = "d:/Code/CodeAgent/static"
+SCRIPT_DIR = Path(__file__).parent.resolve()
+WORKER_CONFIGS_DIR = SCRIPT_DIR / "worker_configs"
+STATIC_DIR = SCRIPT_DIR / "static"
+
+# Determine Workspace Root
+if args.workspace_root:
+    workspace_path_arg = Path(args.workspace_root)
+    if workspace_path_arg.is_absolute():
+        WORKSPACE_ROOT = workspace_path_arg
+    else:
+        # Resolve relative paths against the current working directory
+        WORKSPACE_ROOT = Path.cwd() / workspace_path_arg
+else:
+    # Default to a directory relative to the script location if not provided
+    WORKSPACE_ROOT = SCRIPT_DIR / "workspace_root"
+
+TASKS_YAML_PATH = WORKSPACE_ROOT / "tasks.yaml"
 
 # --- Initialization ---
 app = FastAPI()
 
-# Ensure directories exist
-os.makedirs(WORKSPACE_ROOT, exist_ok=True)
-os.makedirs(WORKER_CONFIGS_DIR, exist_ok=True)
-os.makedirs(STATIC_DIR, exist_ok=True)
+# Ensure directories exist (using Path objects)
+WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
+WORKER_CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-# Initialize Managers
-workspace_manager = WorkspaceManager(work_root=WORKSPACE_ROOT)
-task_manager = TaskManager(yaml_path=TASKS_YAML_PATH)
+# Initialize Managers (pass paths as strings if needed by the classes)
+workspace_manager = WorkspaceManager(work_root=str(WORKSPACE_ROOT))
+task_manager = TaskManager(yaml_path=str(TASKS_YAML_PATH))
 try:
     task_manager.load()
     print(f"Loaded {len(task_manager.tasks)} tasks from {TASKS_YAML_PATH}")
@@ -96,9 +123,35 @@ async def notify_task_change(task_id: uuid.UUID, property_name: str, old_value: 
 
     await websocket_manager.broadcast(update_data)
 
+async def cleanup_worker_on_state_change(task_id: uuid.UUID, old_state: TaskState, new_state: TaskState):
+    """Callback function to clean up worker resources when task leaves PROCESSING state."""
+    if old_state == TaskState.PROCESSING and new_state != TaskState.PROCESSING:
+        print(f"Task {task_id} left PROCESSING state ({old_state.value} -> {new_state.value}). Cleaning up worker.")
+        try:
+            if task_id in active_workers:
+                worker_info = active_workers.pop(task_id) # Remove and get info
+                workspace = worker_info["workspace"]
+                workspace_manager.free(workspace)
+                print(f"Cleaned up worker and freed workspace {workspace.id} for task {task_id}")
+                # Notify clients about workspace being freed
+                await websocket_manager.broadcast({"type": "workspaces_updated"})
+            else:
+                # This might happen if stop_task was called concurrently or if cleanup already occurred
+                print(f"Task {task_id} not found in active_workers during cleanup listener execution.")
+        except Exception as e:
+            # Log error but don't prevent other operations
+            print(f"Error during worker cleanup for task {task_id}: {e}")
+
+
 # Register listeners for existing tasks
 for task_id, task_obj in task_manager.tasks.items():
+    # Ensure task is not stuck in PROCESSING state from a previous run without an active worker
+    if task_obj.state == TaskState.PROCESSING and task_id not in active_workers:
+        print(f"Correcting state for task {task_id}: Found PROCESSING but no active worker. Setting to PENDING.")
+        task_obj.state = TaskState.PENDING # Reset state directly
+
     task_obj.add_listener("state", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "state", old, new)))
+    task_obj.add_listener("state", lambda old, new, tid=task_id: asyncio.create_task(cleanup_worker_on_state_change(tid, old, new))) # Add cleanup listener
     task_obj.add_listener("history", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "history", old, new)))
     # We don't usually notify on description changes unless required
     # task_obj.add_listener("description", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "description", old, new)))
@@ -106,14 +159,14 @@ for task_id, task_obj in task_manager.tasks.items():
 
 # --- API Endpoints ---
 
-# Serve Static Files (HTML, CSS, JS)
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Serve Static Files (HTML, CSS, JS) - Use Path object directly if supported, else convert to string
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     # Serve the main index.html
-    index_path = os.path.join(STATIC_DIR, "index.html")
-    if not os.path.exists(index_path):
+    index_path = STATIC_DIR / "index.html" # Use Path object
+    if not index_path.exists():
          # Create a basic placeholder if it doesn't exist
          placeholder_content = """
          <!DOCTYPE html>
@@ -132,11 +185,9 @@ async def read_root():
          </body>
          </html>
          """
-         with open(index_path, "w") as f:
-             f.write(placeholder_content)
+         index_path.write_text(placeholder_content) # Use Path object method
 
-    with open(index_path, "r") as f:
-        html_content = f.read()
+    html_content = index_path.read_text() # Use Path object method
     return HTMLResponse(content=html_content)
 
 # --- Workspace API ---
@@ -208,6 +259,7 @@ async def create_task(request: Request):
 
     # Register listeners for the new task
     new_task.add_listener("state", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "state", old, new)))
+    new_task.add_listener("state", lambda old, new, tid=task_id: asyncio.create_task(cleanup_worker_on_state_change(tid, old, new))) # Add cleanup listener
     new_task.add_listener("history", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "history", old, new)))
 
     task_manager.save() # Persist the new task
@@ -238,9 +290,17 @@ async def start_task(task_id: uuid.UUID, request: Request):
     if not worker_config_name:
         raise HTTPException(status_code=400, detail="Worker configuration name is required")
 
-    worker_config_path = os.path.join(WORKER_CONFIGS_DIR, worker_config_name)
-    if not os.path.exists(worker_config_path):
-        raise HTTPException(status_code=400, detail=f"Worker configuration '{worker_config_name}' not found")
+    # Ensure worker_config_name doesn't contain path traversal characters for security
+    if ".." in worker_config_name or "/" in worker_config_name or "\\" in worker_config_name:
+         raise HTTPException(status_code=400, detail="Invalid worker configuration name")
+
+    worker_config_path = WORKER_CONFIGS_DIR / f"{worker_config_name}.yaml" # Assume .yaml extension or adjust as needed
+    if not worker_config_path.exists():
+        # Try without .yaml if that's the convention
+        worker_config_path = WORKER_CONFIGS_DIR / worker_config_name
+        if not worker_config_path.exists():
+             raise HTTPException(status_code=400, detail=f"Worker configuration '{worker_config_name}' not found in {WORKER_CONFIGS_DIR}")
+
 
     # Allocate workspace
     workspace = workspace_manager.alloc(str(task_id))
@@ -299,20 +359,20 @@ async def stop_task(task_id: uuid.UUID):
     except Exception as e:
         print(f"Error stopping worker for task {task_id}: {e}")
         # Continue cleanup even if stop fails
+        pass # Cleanup is now handled by the state change listener
 
-    # Clean up
-    del active_workers[task_id]
-    workspace_manager.free(workspace)
+    # worker.stop() should trigger the state change listener which handles cleanup
+    # We might still want to ensure the state becomes PENDING if stop() fails silently
+    # but the listener is the primary cleanup mechanism.
+    # If worker.stop() successfully changes state, the listener handles active_workers and workspace.
 
-    # Ensure state is PENDING after stop (worker.stop might already do this via listener)
-    task = task_manager.tasks[task_id]
-    if task.state != TaskState.PENDING:
-         task.state = TaskState.PENDING # Force state if needed
+    # Optional: Force state check if stop() might fail without state change
+    # task = task_manager.tasks[task_id]
+    # if task_id not in active_workers and task.state == TaskState.PROCESSING:
+    #     print(f"Forcing task {task_id} state to PENDING after stop attempt.")
+    #     task.state = TaskState.PENDING # This would trigger listeners again if not already PENDING
 
-    await websocket_manager.broadcast({"type": "workspaces_updated"})
-    # Task state change should have been broadcast by listener during worker.stop()
-
-    return {"message": f"Task {task_id} stopped"}
+    return {"message": f"Stop request sent for task {task_id}. Cleanup occurs on state change."}
 
 
 @app.delete("/api/tasks/{task_id}")
@@ -343,9 +403,14 @@ async def delete_task(task_id: uuid.UUID):
 @app.get("/api/worker_configs")
 async def get_worker_configs():
     try:
-        configs = [f for f in os.listdir(WORKER_CONFIGS_DIR) if os.path.isfile(os.path.join(WORKER_CONFIGS_DIR, f)) and f.endswith('.yaml')]
+        # Use pathlib for listing files
+        configs = [f.name for f in WORKER_CONFIGS_DIR.iterdir() if f.is_file() and f.suffix == '.yaml']
+        # Optionally remove the .yaml suffix if the API expects just the name
+        # configs = [f.stem for f in WORKER_CONFIGS_DIR.iterdir() if f.is_file() and f.suffix == '.yaml']
         return {"configs": configs}
     except FileNotFoundError:
+        # WORKER_CONFIGS_DIR is created at startup, so this shouldn't happen unless deleted manually
+        print(f"Warning: Worker config directory not found at {WORKER_CONFIGS_DIR}")
         return {"configs": []}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading worker configs: {e}")
@@ -371,9 +436,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 # --- Server Startup ---
+# --- Server Startup ---
+def run_server():
+    # Pass remaining args (like host/port) to uvicorn if needed, or configure here
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False) # Changed reload to False for stability
+    # Note: reload=True is convenient for development but resets state and might interfere with arg parsing.
+    # Consider using a process manager like gunicorn for production.
+
 if __name__ == "__main__":
-    import uvicorn
-    # Ensure reload is False for production or when state needs persistence across restarts
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-    # Note: reload=True is convenient for development but will reset in-memory state (like active_workers)
-    # For production, use reload=False and potentially handle graceful shutdowns to save state.
+    run_server()
