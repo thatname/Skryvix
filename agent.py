@@ -256,7 +256,7 @@ async def async_main(args: argparse.Namespace):
     task_description = args.task
     if not task_description:
         if not args.worker_mode: # Prompt user in active mode (default)
-            print("Please enter the task description (end with '@@@' on a new line):", file=sys.stderr)
+            print("Please enter the task description (end with '@@@' on a new line):")
         lines = []
         while True:
             try:

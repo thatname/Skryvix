@@ -42,7 +42,6 @@ class SubprocessWorker(Worker):
             async for token in self.subprocess_tool.use(self.task.description + "\n@@@"):
                 if token:
                     self.task.history += token
-                    print(token, end = "")
             # After process completes, set task state based on exit code
             exit_code = self.subprocess_tool.exit_code
             if exit_code == 0:
