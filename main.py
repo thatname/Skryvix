@@ -4,13 +4,14 @@ import uuid
 import yaml
 import argparse
 import uvicorn
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncGenerator
 
 from workspace import WorkspaceManager, WorkSpace
 from task import TaskManager, Task, TaskState
@@ -46,8 +47,40 @@ else:
 
 TASKS_YAML_PATH = WORKSPACE_ROOT / "tasks.yaml"
 
+# --- Lifespan Management for Watchdog ---
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    # Startup: Initialize and start watchdog
+    print("Application startup: Initializing watchdog...")
+    observer = Observer()
+    try:
+        loop = asyncio.get_running_loop()
+        print(f"Lifespan startup: Using event loop {id(loop)}")
+        event_handler = FileChangeHandler(websocket_manager, loop)
+        observer.schedule(event_handler, str(WORKSPACE_ROOT), recursive=True)
+        observer.start()
+        app.state.observer = observer # Store observer in app state
+        print("Watchdog observer started.")
+    except Exception as e:
+        print(f"Error starting watchdog observer: {e}")
+        # Decide if the app should fail to start if observer fails
+        raise # Re-raise to prevent app start if observer is critical
+
+    yield # Application runs here
+
+    # Shutdown: Stop watchdog
+    print("Application shutdown: Stopping watchdog observer...")
+    observer = getattr(app.state, "observer", None)
+    if observer and observer.is_alive():
+        observer.stop()
+        observer.join() # Wait for the observer thread to finish
+        print("Watchdog observer stopped.")
+    else:
+        print("Watchdog observer not found or already stopped.")
+
+
 # --- Initialization ---
-app = FastAPI()
+app = FastAPI(lifespan=lifespan) # Register the lifespan manager
 
 # Ensure directories exist (using Path objects)
 WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -205,7 +238,7 @@ class FileChangeHandler(FileSystemEventHandler):
             print(f"[Watchdog] Error in FileChangeHandler.on_any_event for {event.src_path} BEFORE scheduling: {e!r}")
 
 
-# Watchdog observer will be initialized and started later, just before server run
+# Watchdog observer is now initialized and managed by the lifespan function
 
 # --- API Endpoints ---
 @app.get("/api/directory")
@@ -509,26 +542,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # --- Server Startup ---
 def run_server():
-    # Initialize watchdog observer
-    observer = Observer()
-    # Get the current or create a new event loop for the main thread
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError: # No running loop in main thread yet
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    event_handler = FileChangeHandler(websocket_manager, loop) # Pass the loop
-    observer.schedule(event_handler, str(WORKSPACE_ROOT), recursive=True)
-    observer.start() # Start observer *before* blocking with uvicorn
-
-    # Add a shutdown event to stop the observer gracefully
-    @app.on_event("shutdown")
-    def shutdown_event():
-        print("Stopping watchdog observer...")
-        observer.stop()
-        observer.join() # Wait for the observer thread to finish
-        print("Watchdog observer stopped.")
+    # Watchdog observer is now managed by the lifespan context manager
+    # The old @app.on_event("shutdown") is also replaced by the lifespan's shutdown phase
 
     # Run Uvicorn
     # Pass remaining args (like host/port) to uvicorn if needed, or configure here
