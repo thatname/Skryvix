@@ -161,21 +161,51 @@ for task_id, task_obj in task_manager.tasks.items():
 
 # --- Directory Watchdog ---
 class FileChangeHandler(FileSystemEventHandler):
-    def __init__(self, websocket_manager):
+    def __init__(self, websocket_manager, loop): # Add loop parameter
         self.websocket_manager = websocket_manager
+        self.loop = loop # Store the loop
 
-    async def on_modified(self, event):
-        if not event.is_directory:
-            await self.websocket_manager.broadcast({
+    # Make it synchronous
+    def on_any_event(self, event):
+        print(f"[Watchdog] Event handler triggered for: {event.src_path} (type: {event.event_type})")
+        # Optional: Filter out directory events if not needed
+        # if event.is_directory:
+        #     print("[Watchdog] Skipping directory event.")
+        #     return
+
+        try:
+            print(f"[Watchdog] Preparing message for {event.src_path}")
+            # Prepare the message payload
+            message = {
                 "type": "directory_changed",
+                # Ensure path is relative and serializable
                 "path": str(Path(event.src_path).relative_to(WORKSPACE_ROOT))
-            })
+            }
 
-# Initialize watchdog observer
-observer = Observer()
-event_handler = FileChangeHandler(websocket_manager)
-observer.schedule(event_handler, str(WORKSPACE_ROOT), recursive=True)
-observer.start()
+            # Schedule the async broadcast call on the main loop
+            print(f"[Watchdog] Scheduling broadcast for {event.src_path} on loop {id(self.loop)}")
+            future = asyncio.run_coroutine_threadsafe(
+                self.websocket_manager.broadcast(message),
+                self.loop
+            )
+
+            # Define a callback to check the future's result
+            def future_callback(fut):
+                try:
+                    result = fut.result() # Check for exceptions raised in the coroutine
+                    print(f"[Watchdog] Broadcast future completed for {event.src_path}. Result: {result}")
+                except Exception as exc:
+                    print(f"[Watchdog] Broadcast future failed for {event.src_path}: {exc!r}")
+
+            future.add_done_callback(future_callback)
+            print(f"[Watchdog] Broadcast scheduled for {event.src_path}.")
+
+        except Exception as e:
+            # Log errors happening during event handling *before* scheduling
+            print(f"[Watchdog] Error in FileChangeHandler.on_any_event for {event.src_path} BEFORE scheduling: {e!r}")
+
+
+# Watchdog observer will be initialized and started later, just before server run
 
 # --- API Endpoints ---
 @app.get("/api/directory")
@@ -478,12 +508,39 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 # --- Server Startup ---
-# --- Server Startup ---
 def run_server():
+    # Initialize watchdog observer
+    observer = Observer()
+    # Get the current or create a new event loop for the main thread
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError: # No running loop in main thread yet
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    event_handler = FileChangeHandler(websocket_manager, loop) # Pass the loop
+    observer.schedule(event_handler, str(WORKSPACE_ROOT), recursive=True)
+    observer.start() # Start observer *before* blocking with uvicorn
+
+    # Add a shutdown event to stop the observer gracefully
+    @app.on_event("shutdown")
+    def shutdown_event():
+        print("Stopping watchdog observer...")
+        observer.stop()
+        observer.join() # Wait for the observer thread to finish
+        print("Watchdog observer stopped.")
+
+    # Run Uvicorn
     # Pass remaining args (like host/port) to uvicorn if needed, or configure here
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False) # Changed reload to False for stability
-    # Note: reload=True is convenient for development but resets state and might interfere with arg parsing.
-    # Consider using a process manager like gunicorn for production.
+    # Explicitly tell uvicorn to use the asyncio loop standard.
+    # Uvicorn will use the loop set for the current thread if available.
+    config = uvicorn.Config("main:app", host="0.0.0.0", port=8000, loop="asyncio", reload=False)
+    server = uvicorn.Server(config)
+
+    # Run the server (this blocks until shutdown)
+    # Uvicorn's run method handles the loop lifecycle properly
+    server.run()
+
 
 if __name__ == "__main__":
     run_server()

@@ -133,17 +133,29 @@ document.addEventListener('DOMContentLoaded', () => {
             const li = document.createElement('li');
             const statusClass = ws.is_occupied ? 'status busy' : 'status';
             const statusText = ws.is_occupied ? `Busy (Task: ${ws.taskid})` : 'Idle';
+            li.dataset.wsPath = `ws${ws.id}`; // Store workspace path
+            li.style.cursor = 'pointer'; // Indicate clickable
             li.innerHTML = `
                 <span>ID: ${ws.id}</span>
                 <span class="${statusClass}">Status: ${statusText}</span>
-                <a href="/workspace_root/ws${ws.id}" class="open-ws-btn">Open</a>
                 <button class="delete-ws-btn" data-ws-id="${ws.id}" ${ws.is_occupied ? 'disabled' : ''}>Delete</button>
             `;
+
             // Add event listener for the delete button
             li.querySelector('.delete-ws-btn').addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent li click event when deleting
                 const wsId = e.target.getAttribute('data-ws-id');
                 if (confirm(`Are you sure you want to delete workspace ${wsId}?`)) {
                     deleteWorkspace(wsId);
+                }
+            });
+
+            // Add event listener for the workspace item itself to load folder
+            li.addEventListener('click', (e) => {
+                // Don't trigger if delete button was clicked
+                if (e.target.tagName !== 'BUTTON') {
+                    const wsPath = e.currentTarget.dataset.wsPath;
+                    loadFolder(wsPath); // Load workspace root into folder browser
                 }
             });
             workspaceList.appendChild(li);
