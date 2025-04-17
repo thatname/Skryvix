@@ -481,7 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const message = JSON.parse(event.data);
             if (message.type === 'directory_changed') {
                 // If current directory or parent was changed, refresh
-                if (currentPath === '' || 
+                if (currentPath === '' || currentPath === '.' ||
                     message.path.startsWith(currentPath) ||
                     message.path.includes(currentPath)) {
                     loadFolder(currentPath);
