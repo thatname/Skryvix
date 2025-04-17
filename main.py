@@ -4,6 +4,8 @@ import uuid
 import yaml
 import argparse
 import uvicorn
+import json
+from sse_starlette.sse import EventSourceResponse
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
@@ -101,8 +103,34 @@ except Exception as e:
 # --- State Tracking ---
 active_workers: Dict[uuid.UUID, Dict[str, Any]] = {}  # {task_id: {"worker": Worker, "workspace": WorkSpace}}
 
-# --- WebSocket Connection Manager ---
-class ConnectionManager:
+# --- Connection Managers ---
+class TaskHistoryConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[uuid.UUID, List[Any]] = {}  # {task_id: [response objects]}
+    
+    async def subscribe(self, task_id: uuid.UUID, response):
+        if task_id not in self.active_connections:
+            self.active_connections[task_id] = []
+        self.active_connections[task_id].append(response)
+        print(f"SSE subscribed for task {task_id}")
+    
+    def unsubscribe(self, task_id: uuid.UUID, response):
+        if task_id in self.active_connections:
+            self.active_connections[task_id].remove(response)
+            if not self.active_connections[task_id]:
+                del self.active_connections[task_id]
+            print(f"SSE unsubscribed for task {task_id}")
+    
+    async def send_history_update(self, task_id: uuid.UUID, new_tokens: str):
+        if task_id in self.active_connections:
+            for response in self.active_connections[task_id]:
+                try:
+                    await response.send(f"data: {json.dumps({'tokens': new_tokens})}\n\n")
+                except Exception as e:
+                    print(f"Error sending SSE update for task {task_id}: {e}")
+                    self.unsubscribe(task_id, response)
+
+class WebSocketConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
         # Potentially add tracking for which task details a client is interested in
@@ -141,7 +169,8 @@ class ConnectionManager:
              print(f"Error sending personal message to {websocket.client}: {e}")
 
 
-websocket_manager = ConnectionManager()
+task_history_manager = TaskHistoryConnectionManager()
+websocket_manager = WebSocketConnectionManager()
 
 # --- Task Change Listeners ---
 async def notify_task_change(task_id: uuid.UUID, property_name: str, old_value: Any, new_value: Any):
@@ -150,13 +179,19 @@ async def notify_task_change(task_id: uuid.UUID, property_name: str, old_value: 
     update_data = {
         "type": "task_update",
         "task_id": str(task_id),
-        "data": {property_name: new_value.value if isinstance(new_value, Enum) else new_value} # Send enum value
+        "data": {property_name: new_value.value if isinstance(new_value, Enum) else new_value}
     }
-    # If history changed, maybe send delta or full history based on strategy
-    if property_name == "history":
-         update_data["data"] = {"history": new_value} # Send full history for now
-
     await websocket_manager.broadcast(update_data)
+
+async def notify_history_change(task_id: uuid.UUID, old_history: str, new_history: str):
+    """Callback function to send history updates via SSE."""
+    if old_history and new_history.startswith(old_history):
+        # Only send the new tokens if it's an append operation
+        new_tokens = new_history[len(old_history):]
+        await task_history_manager.send_history_update(task_id, new_tokens)
+    else:
+        # Send full history if it's not an append or if old_history is empty
+        await task_history_manager.send_history_update(task_id, new_history)
 
 async def cleanup_worker_on_state_change(task_id: uuid.UUID, old_state: TaskState, new_state: TaskState):
     """Callback function to clean up worker resources when task leaves PROCESSING state."""
@@ -187,7 +222,7 @@ for task_id, task_obj in task_manager.tasks.items():
 
     task_obj.add_listener("state", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "state", old, new)))
     task_obj.add_listener("state", lambda old, new, tid=task_id: asyncio.create_task(cleanup_worker_on_state_change(tid, old, new))) # Add cleanup listener
-    task_obj.add_listener("history", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "history", old, new)))
+    task_obj.add_listener("history", lambda old, new, tid=task_id: asyncio.create_task(notify_history_change(tid, old, new)))
     # We don't usually notify on description changes unless required
     # task_obj.add_listener("description", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "description", old, new)))
 
@@ -520,6 +555,38 @@ async def get_worker_configs():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading worker configs: {e}")
 
+
+# --- SSE Endpoint ---
+@app.get("/task-history/{task_id}")
+async def task_history_stream(request: Request, task_id: uuid.UUID):
+    # Check if task exists
+    if task_id not in task_manager.tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Get the task
+    task = task_manager.tasks[task_id]
+    
+    # SSE response setup
+    async def event_generator():
+        try:
+            # Send initial full history
+            yield {
+                "event": "message",
+                "data": json.dumps({
+                    "type": "initial_history",
+                    "history": task.history
+                })
+            }
+            
+            # Keep connection open for updates
+            while True:
+                if await request.is_disconnected():
+                    break
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            print(f"SSE connection closed for task {task_id}")
+    
+    return EventSourceResponse(event_generator())
 
 # --- WebSocket Endpoint ---
 @app.websocket("/ws")
