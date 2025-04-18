@@ -382,7 +382,6 @@ async def get_tasks():
         tasks_by_state[task.state.value].append({
             "id": str(tid),
             "description": task.description,
-            "history": task.history, # Consider if history should be fetched separately
             "state": task.state.value
         })
     return tasks_by_state

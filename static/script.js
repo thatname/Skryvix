@@ -18,8 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const processingTasksList = document.getElementById('processing-tasks');
     const completeTasksList = document.getElementById('complete-tasks');
 
-    const taskDetailsContent = document.getElementById('task-details-content');
-
     let selectedTaskId = null; // Track which task's details are being viewed
     let tasksData = {}; // Store task data locally { 'uuid': { description: ..., history: ..., state: ... } }
 
@@ -67,14 +65,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderTasks();
                 break;
             case 'task_update':
-                // Update task state or history in local store and UI
+                // Update task state in local store and UI
                 if (tasksData[message.task_id]) {
                     Object.assign(tasksData[message.task_id], message.data); // Update changed properties
                     renderTasks(); // Re-render all task lists
-                    // If the updated task is the selected one, update details panel
-                    if (selectedTaskId === message.task_id && message.data.history !== undefined) {
-                        renderTaskDetails(selectedTaskId);
-                    }
                 }
                 break;
             case 'task_deleted':
@@ -82,9 +76,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (tasksData[message.task_id]) {
                     delete tasksData[message.task_id];
                     renderTasks();
-                    // If the deleted task was selected, clear details
+                    // If the deleted task was selected, clear selection
                     if (selectedTaskId === message.task_id) {
-                        clearTaskDetails();
+                        selectedTaskId = null;
                     }
                 }
                 break;
@@ -248,27 +242,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function renderTaskDetails(taskId) {
-        const task = tasksData[taskId];
-        if (task) {
-            taskDetailsContent.innerHTML = `
-                <h3>History for Task: ${taskId}</h3>
-                <pre>${escapeHtml(task.history)}</pre>
-            `;
-        } else {
-            clearTaskDetails();
-        }
-    }
-
-     function clearTaskDetails() {
-        selectedTaskId = null;
-        taskDetailsContent.innerHTML = '<p>Select a task to view its history.</p>';
-        highlightSelectedTask(); // Remove highlight
-    }
-
     function selectTask(taskId) {
         selectedTaskId = taskId;
-        renderTaskDetails(taskId);
+        const iframe = document.getElementById('task-details-frame');
+        iframe.src = `/static/task.html?task_id=${taskId}`;
         highlightSelectedTask();
     }
 
@@ -299,11 +276,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 tasksData[task.id] = task;
             });
             renderTasks();
-            // If a task was selected, re-render its details
+            // If a task was selected, update the iframe
             if (selectedTaskId && tasksData[selectedTaskId]) {
-                 renderTaskDetails(selectedTaskId);
-            } else {
-                 clearTaskDetails(); // Clear details if selected task no longer exists
+                const iframe = document.getElementById('task-details-frame');
+                iframe.src = `/task.html?task_id=${selectedTaskId}`;
             }
         }
     }
