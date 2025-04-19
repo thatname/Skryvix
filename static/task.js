@@ -15,7 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Connect to SSE endpoint
     const eventSource = new EventSource(`/task-history/${taskId}`);
     
-    eventSource.onmessage = (event) => {
+    // Use addEventListener for 'message' events
+    eventSource.addEventListener('message', (event) => {
         const data = JSON.parse(event.data);
         
         if (data.type === 'initial_history') {
@@ -24,11 +25,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (data.type === 'history_update') {
             historyContainer.textContent += data.tokens;
         }
-    };
+    }); // Added semicolon
 
     eventSource.onerror = () => {
         document.getElementById('status').textContent = 'Error: Connection lost';
         document.getElementById('status').className = 'error';
         eventSource.close();
-    };
+    }; // Added semicolon
 });

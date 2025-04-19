@@ -106,29 +106,58 @@ active_workers: Dict[uuid.UUID, Dict[str, Any]] = {}  # {task_id: {"worker": Wor
 # --- Connection Managers ---
 class TaskHistoryConnectionManager:
     def __init__(self):
-        self.active_connections: Dict[uuid.UUID, List[Any]] = {}  # {task_id: [response objects]}
-    
-    async def subscribe(self, task_id: uuid.UUID, response):
+        # Store asyncio Queues for each task ID
+        self.active_connections: Dict[uuid.UUID, List[asyncio.Queue]] = {}
+
+    async def subscribe(self, task_id: uuid.UUID, queue: asyncio.Queue):
+        """Subscribe a queue to receive updates for a specific task."""
         if task_id not in self.active_connections:
             self.active_connections[task_id] = []
-        self.active_connections[task_id].append(response)
-        print(f"SSE subscribed for task {task_id}")
-    
-    def unsubscribe(self, task_id: uuid.UUID, response):
+        self.active_connections[task_id].append(queue)
+        print(f"SSE queue subscribed for task {task_id}")
+
+    def unsubscribe(self, task_id: uuid.UUID, queue: asyncio.Queue):
+        """Unsubscribe a queue from task updates."""
         if task_id in self.active_connections:
-            self.active_connections[task_id].remove(response)
-            if not self.active_connections[task_id]:
-                del self.active_connections[task_id]
-            print(f"SSE unsubscribed for task {task_id}")
-    
+            try:
+                self.active_connections[task_id].remove(queue)
+                if not self.active_connections[task_id]:
+                    del self.active_connections[task_id]
+                print(f"SSE queue unsubscribed for task {task_id}")
+            except ValueError:
+                print(f"Warning: Queue not found during unsubscribe for task {task_id}")
+        else:
+            print(f"Warning: Task ID {task_id} not found during unsubscribe")
+
     async def send_history_update(self, task_id: uuid.UUID, new_tokens: str):
+        """Send history updates to all subscribed queues for a task."""
+        queues_to_remove = []
         if task_id in self.active_connections:
-            for response in self.active_connections[task_id]:
+            # Iterate safely over a copy in case unsubscribe modifies the list
+            for queue in list(self.active_connections.get(task_id, [])):
                 try:
-                    await response.send(f"data: {json.dumps({'tokens': new_tokens})}\n\n")
+                    await queue.put(new_tokens)
+                except asyncio.QueueFull:
+                    print(f"Warning: Queue full for a subscriber of task {task_id}. Update lost.")
+                    # Optionally remove the queue if it's consistently full
+                    # queues_to_remove.append(queue)
                 except Exception as e:
-                    print(f"Error sending SSE update for task {task_id}: {e}")
-                    self.unsubscribe(task_id, response)
+                    print(f"Error putting update onto queue for task {task_id}: {e}")
+                    # Decide if error warrants removal
+                    # queues_to_remove.append(queue)
+
+            # # Remove problematic queues if necessary
+            # for queue in queues_to_remove:
+            #     self.unsubscribe(task_id, queue)
+
+            # The loop below is leftover from the old implementation and should be removed.
+            # active_connections now holds queues, not response objects to send to directly.
+            # for response in self.active_connections[task_id]:
+            #     try:
+            #         await response.send(f"data: {json.dumps({'tokens': new_tokens})}\n\n")
+            #     except Exception as e:
+            #         print(f"Error sending SSE update for task {task_id}: {e}")
+            #         self.unsubscribe(task_id, response)
 
 class WebSocketConnectionManager:
     def __init__(self):
@@ -222,10 +251,10 @@ for task_id, task_obj in task_manager.tasks.items():
 
     task_obj.add_listener("state", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "state", old, new)))
     task_obj.add_listener("state", lambda old, new, tid=task_id: asyncio.create_task(cleanup_worker_on_state_change(tid, old, new))) # Add cleanup listener
+    # Correctly register notify_history_change for SSE updates on history changes for existing tasks
     task_obj.add_listener("history", lambda old, new, tid=task_id: asyncio.create_task(notify_history_change(tid, old, new)))
     # We don't usually notify on description changes unless required
     # task_obj.add_listener("description", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "description", old, new)))
-
 
 # --- Directory Watchdog ---
 class FileChangeHandler(FileSystemEventHandler):
@@ -399,7 +428,8 @@ async def create_task(request: Request):
     # Register listeners for the new task
     new_task.add_listener("state", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "state", old, new)))
     new_task.add_listener("state", lambda old, new, tid=task_id: asyncio.create_task(cleanup_worker_on_state_change(tid, old, new))) # Add cleanup listener
-    new_task.add_listener("history", lambda old, new, tid=task_id: asyncio.create_task(notify_task_change(tid, "history", old, new)))
+    # Correctly register notify_history_change for SSE updates on history changes
+    new_task.add_listener("history", lambda old, new, tid=task_id: asyncio.create_task(notify_history_change(tid, old, new)))
 
     task_manager.save() # Persist the new task
     await websocket_manager.broadcast({
@@ -565,26 +595,57 @@ async def task_history_stream(request: Request, task_id: uuid.UUID):
     # Get the task
     task = task_manager.tasks[task_id]
     
-    # SSE response setup
+    # SSE response setup using asyncio Queue
     async def event_generator():
+        queue = asyncio.Queue()
+        await task_history_manager.subscribe(task_id, queue)
+        print(f"SSE EventSource subscribed and queue registered for task {task_id}")
         try:
-            # Send initial full history
+            # Send initial full history immediately after subscribing
             yield {
-                "event": "message",
+                "event": "message", # Use "message" or a custom event type like "initial"
                 "data": json.dumps({
                     "type": "initial_history",
                     "history": task.history
                 })
             }
-            
-            # Keep connection open for updates
+
+            # Listen for updates from the queue
             while True:
+                # Check connection status before waiting indefinitely
                 if await request.is_disconnected():
+                    print(f"SSE client disconnected (checked before queue.get) for task {task_id}")
                     break
-                await asyncio.sleep(1)
+
+                try:
+                    # Wait for new tokens from the queue
+                    new_tokens = await queue.get()
+                    yield {
+                        "event": "message", # Use "message" or a custom event type like "update"
+                        "data": json.dumps({
+                            "type": "history_update", # More specific type
+                            "tokens": new_tokens
+                        })
+                    }
+                    queue.task_done() # Mark the item as processed
+                except asyncio.CancelledError:
+                    # This occurs if the client disconnects while queue.get() is waiting
+                    print(f"SSE queue.get() cancelled for task {task_id}, likely client disconnect.")
+                    break # Exit the loop on cancellation
+                except Exception as e:
+                    print(f"Error getting from SSE queue for task {task_id}: {e}")
+                    # Decide if we should break or continue
+                    break # Example: break on error
+
         except asyncio.CancelledError:
-            print(f"SSE connection closed for task {task_id}")
-    
+            # This catches cancellation if it happens outside the queue.get() wait
+            print(f"SSE event_generator task cancelled for task {task_id}")
+        finally:
+            # Ensure unsubscribe happens regardless of how the loop exits
+            print(f"SSE unsubscribing queue for task {task_id}")
+            task_history_manager.unsubscribe(task_id, queue)
+            print(f"SSE EventSource connection closed and queue unsubscribed for task {task_id}")
+
     return EventSourceResponse(event_generator())
 
 # --- WebSocket Endpoint ---

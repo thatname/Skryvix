@@ -143,8 +143,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Don't trigger if delete button was clicked
         if (e.target.tagName !== 'BUTTON') {
             const wsPath = e.currentTarget.dataset.wsPath;
-            // Update the folder iframe to show this workspace
-            document.getElementById('folder-frame').src = `/static/file.htm?subdir=${encodeURIComponent(wsPath)}`;
+            // Update the details iframe to show this workspace's folder
+            document.getElementById('task-details-frame').src = `/static/folder.htm?subdir=${encodeURIComponent(wsPath)}`;
         }
     });
             workspaceList.appendChild(li);
