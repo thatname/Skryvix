@@ -30,6 +30,8 @@ class SubProcessTool(Tool):
             command_end_marker (str): Marker that indicates command completion
             work_dir (str, optional): Working directory for the subprocess. Defaults to None.
         """
+
+        self.timeout = 300
         # Store command end marker
         self.command_end_marker = command_end_marker
 
@@ -106,7 +108,6 @@ class SubProcessTool(Tool):
         Returns:
             str: Command output result
         """
-        timeout = 300  # Total timeout
         no_change_timeout = 2  # Timeout for no output changes (seconds)
         try:
             if args != None:
@@ -120,7 +121,7 @@ class SubProcessTool(Tool):
             while True:
                 current_time = time.time()
                 # Check if total timeout exceeded
-                if current_time - start_time > timeout:
+                if self.timeout and current_time - start_time > self.timeout:
                     yield "Command execution timed out"
                     break
                 

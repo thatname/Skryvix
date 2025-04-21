@@ -1,5 +1,5 @@
 # Basic Configuration
-model_name: "gemini-2.5-pro-exp-03-25"  # Model name
+model_name: null
 base_url: "http://127.0.0.1:5000/v1"  # Optional, custom API endpoint
 system_prompt: "You are a helpful AI assistant."  # System prompt
 api_key_env_var: "GOOGLE_API_KEY" # This is enviornment variable name for google API key.

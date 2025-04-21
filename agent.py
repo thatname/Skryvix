@@ -10,11 +10,19 @@ import sys
 from pathlib import Path
 from chat_streamer import ChatStreamer
 from tool import Tool
-
+from ask_tool import read_multiline_stdin
 import sys
 import asyncio
 import argparse
 from pathlib import Path
+
+original_stdout = sys.stdout
+    
+def safe_write(text):
+    """Safely write to original stdout"""
+    original_stdout.write(text)
+    original_stdout.flush()
+    
 
 class ToolAction(argparse.Action):
     """Custom action to handle --tool arguments"""
@@ -175,8 +183,7 @@ class Agent:
                 try:
                     # Process tool output
                     async for output in tool.use(args):
-                        for char in output:
-                            yield char
+                        yield output
 
                     # Add newline after tool output
                     yield "\n"
@@ -256,32 +263,16 @@ async def async_main(args: argparse.Namespace):
     task_description = args.task
     if not task_description:
         if not args.worker_mode: # Prompt user in active mode (default)
-            print("Please enter the task description (end with '@@@' on a new line):")
-        lines = []
-        while True:
-            try:
-                # Use asyncio's loop to read stdin asynchronously if possible,
-                # but standard sync readline might be okay for initial input.
-                # For simplicity, using sync readline here.
-                line = sys.stdin.readline()
-                if line.endswith("@@@\n"):
-                    break
-                if not line: # EOF
-                    break
-                lines.append(line)
-            except EOFError:
-                break
-        task_description = "".join(lines).strip()
+            safe_write("Please enter the task description (end with '@@@' on a new line):")
+        # Read from stdin
+        task_description = await read_multiline_stdin()
         if not task_description:
-            print("Error: No task provided either via --task argument or standard input.")
+            safe_write("Error: No task provided either via --task argument or standard input.")
             sys.exit(1) # Exit if no task is available after trying stdin
 
     # Call the agent with the determined task
     async for response in agent(task_description):
-        print(response, end='', flush=True)
-    #except Exception as e:
-    #    print(f"Error in async_main: {str(e)}", file=sys.stderr)
-    #    raise  # Re-raise the exception to be caught by main()
+        safe_write(response)
 
 def main():
     """Main entry point for the agent CLI"""
@@ -297,9 +288,6 @@ def main():
     args = parser.parse_args()
     # Run the async main function
     asyncio.run(async_main(args))
-    #except Exception as e:
-    #    print(f"Error: {str(e)}", file=sys.stderr)
-    #    sys.exit(1)
 
 if __name__ == '__main__':
     main()
