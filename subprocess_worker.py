@@ -37,8 +37,8 @@ class SubprocessWorker(Worker):
                 command,
                 None,
                 work_dir=work_dir,
+                0
             )
-            self.subprocess_tool.timeout = 0
             # Execute command and process output tokens
             async for token in self.subprocess_tool.use(self.task.description + "\n@@@"):
                 if token:

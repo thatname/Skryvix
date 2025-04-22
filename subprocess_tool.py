@@ -21,7 +21,7 @@ class SubProcessTool(Tool):
     def description(self) -> str:
         return "Executes and manages long-running shell commands as persistent subprocesses. Provides real-time output streaming and proper process cleanup."
 
-    def __init__(self, shell_cmd, command_end_marker, work_dir=None):
+    def __init__(self, shell_cmd, command_end_marker, work_dir=None, timeout = 0):
         """
         Initialize subprocess tool with specific shell command and end marker.
 
@@ -31,7 +31,7 @@ class SubProcessTool(Tool):
             work_dir (str, optional): Working directory for the subprocess. Defaults to None.
         """
 
-        self.timeout = 300
+        self.timeout = timeout
         # Store command end marker
         self.command_end_marker = command_end_marker
 
@@ -96,6 +96,7 @@ class SubProcessTool(Tool):
             except Exception as e:
                 self.output_queue.put(f"Error reading output: {str(e)}")
                 break
+        self.running = False
 
     async def use(self, args):
         """
@@ -156,7 +157,6 @@ class SubProcessTool(Tool):
         """
         Destructor, ensures process, thread and buffer are properly cleaned up.
         """
-        print("Starting resource cleanup")
         self.running = False
         
         if hasattr(self, 'process') and self.process:
@@ -169,5 +169,3 @@ class SubProcessTool(Tool):
             
         if hasattr(self, 'reader_thread') and self.reader_thread:
             self.reader_thread.join(timeout=1.0)
-        
-        print("Resource cleanup completed")

@@ -12,7 +12,7 @@ class LLDBTool(SubProcessTool):
         Initialize LLDB tool with appropriate command and end marker.
         """
         shell_cmd = 'lldb'  # LLDB debugger command
-        command_end_marker = '(lldb) '  # LLDB prompt
+        command_end_marker = ''# '(lldb) '  # LLDB prompt
         super().__init__(shell_cmd, command_end_marker)
 
     def name(self) -> str:
@@ -57,7 +57,10 @@ async def main():
     commands = [
         "version",  # Show LLDB version
         "help",  # Show help information
-        "quit"   # Exit LLDB
+        """script
+import sys
+print(sys.version)
+        """
     ]
 
     # Execute each test command

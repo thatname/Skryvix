@@ -177,7 +177,7 @@ class Agent:
             yield f"You invoked tool '{tool_name}'. The result is:\n"            
             if tool_name == "finish":
                 # if any matches are 'finish' but there's more than 1 match
-                yield "Error: 'finish' tool must be used alone without other tool calls.\n"
+                yield "Error: 'finish' tool must be used alone without other tool calls.\n       You can check if the task is really finished, then invoke the finish tool again.\n"
             elif tool_name in self.tool_map:
                 tool = self.tool_map[tool_name]
                 try:
