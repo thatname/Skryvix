@@ -56,12 +56,13 @@ class ToolAction(argparse.Action):
 
 class Agent:
     @classmethod
-    def create_from_args(cls, args: argparse.Namespace) -> 'Agent':
+    def create_from_args(cls, args: Union[argparse.Namespace, str]) -> 'Agent':
         """
-        Create Agent instance from command line arguments
+        Create Agent instance from command line arguments or argument string
 
         Args:
-            args (argparse.Namespace): Parsed command line arguments
+            args (Union[argparse.Namespace, str]): Either parsed command line arguments 
+                or a string of arguments to parse
 
         Returns:
             Agent: Configured Agent instance
@@ -70,6 +71,18 @@ class Agent:
             FileNotFoundError: If any required file is not found
             ImportError: If tool module import fails
         """
+        if isinstance(args, str):
+            # Create parser
+            parser = argparse.ArgumentParser(description='Run the AI agent with specified tools')
+            parser.add_argument('--model-config', required=True, help='Path to the model configuration file')
+            parser.add_argument('--system-prompt-template', required=True, help='Path to the system prompt template file')
+            parser.add_argument('--tool', nargs='+', action=ToolAction, default=[],
+                              help='Tool configuration in format: module.ClassName param1=value1 param2=value2')
+            parser.add_argument('--task', help='Task description for the agent (reads from stdin if not provided)')
+            parser.add_argument('--worker-mode', action="store_true", help='Whether in worker mode')
+            
+            # Parse the string args
+            args = parser.parse_known_args(args.split())[0]
         try:
             # Get the directory containing agent.py
             agent_dir = Path(__file__).parent.absolute()

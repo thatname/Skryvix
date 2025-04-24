@@ -111,12 +111,18 @@ class SubProcessTool(Tool):
         """
         no_change_timeout = 2  # Timeout for no output changes (seconds)
         try:
-            if args != None:
-                self.process.stdin.write((args + '\n').encode("utf-8"))
-                self.process.stdin.flush()
-
             start_time = time.time()
             last_change_time = start_time
+            last_line = ""  # Initialize last_line
+            
+            # Split args into lines if not None
+            command_lines = args.splitlines() if args else []
+            current_line_index = 0
+
+            # If no commands, send empty line to trigger prompt
+            if not command_lines:
+                self.process.stdin.write(b'\n')
+                self.process.stdin.flush()
 
             last_line = ""
             while True:
@@ -143,8 +149,27 @@ class SubProcessTool(Tool):
                 
                 yield last_output
 
-                # If output hasn't changed for a while and ends with the marker, consider command complete
-                if self.exit_code is not None or self.command_end_marker is not None and current_time - last_change_time > no_change_timeout and last_line.endswith(self.command_end_marker):
+                # Check if we can send the next command
+                if current_line_index < len(command_lines) and (
+                    current_line_index == 0 or  # First command
+                    (self.command_end_marker is not None and  # Or previous command completed
+                     current_time - last_change_time > no_change_timeout and 
+                     last_line.endswith(self.command_end_marker))
+                ):
+                    # Send next command
+                    next_command = command_lines[current_line_index] + '\n'
+                    self.process.stdin.write(next_command.encode("utf-8"))
+                    self.process.stdin.flush()
+                    current_line_index += 1
+                    last_change_time = current_time
+                
+                # Check if all commands are complete
+                if current_line_index >= len(command_lines) and (
+                    self.exit_code is not None or 
+                    (self.command_end_marker is not None and 
+                     current_time - last_change_time > no_change_timeout and 
+                     last_line.endswith(self.command_end_marker))
+                ):
                     break
 
                 # Brief sleep to avoid excessive CPU usage
