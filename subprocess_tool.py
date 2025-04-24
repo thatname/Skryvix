@@ -1,11 +1,10 @@
 
 import subprocess
 import time
-from tool import Tool
-import os
 import threading
 import queue
 import asyncio
+from tool import Tool
 
 class SubProcessTool(Tool):
     """
@@ -21,27 +20,21 @@ class SubProcessTool(Tool):
     def description(self) -> str:
         return "Executes and manages long-running shell commands as persistent subprocesses. Provides real-time output streaming and proper process cleanup."
 
-    def __init__(self, shell_cmd, command_end_marker, work_dir=None, timeout = 0):
+    def __init__(self, shell_cmd, command_end_marker=None, work_dir=None, timeout=0):
         """
         Initialize subprocess tool with specific shell command and end marker.
 
         Args:
             shell_cmd (str): Shell command to start the subprocess
-            command_end_marker (str): Marker that indicates command completion
+            command_end_marker (str, optional): Marker that indicates command completion. Defaults to None.
             work_dir (str, optional): Working directory for the subprocess. Defaults to None.
+            timeout (int, optional): Command execution timeout in seconds. Defaults to 0 (no timeout).
         """
-
         self.timeout = timeout
-        # Store command end marker
         self.command_end_marker = command_end_marker
-
-        # Track process exit code
         self.exit_code = None
-        
-        # Create output buffer queue
         self.output_queue = queue.Queue()
         self.running = True
-        self.command_complete = threading.Event()
         
         # Create persistent process
         self.process = subprocess.Popen(
@@ -124,7 +117,6 @@ class SubProcessTool(Tool):
                 self.process.stdin.write(b'\n')
                 self.process.stdin.flush()
 
-            last_line = ""
             while True:
                 current_time = time.time()
                 # Check if total timeout exceeded
@@ -149,26 +141,25 @@ class SubProcessTool(Tool):
                 
                 yield last_output
 
-                # Check if we can send the next command
-                if current_line_index < len(command_lines) and (
-                    current_line_index == 0 or  # First command
-                    (self.command_end_marker is not None and  # Or previous command completed
-                     current_time - last_change_time > no_change_timeout and 
-                     last_line.endswith(self.command_end_marker))
-                ):
-                    # Send next command
-                    next_command = command_lines[current_line_index] + '\n'
-                    self.process.stdin.write(next_command.encode("utf-8"))
-                    self.process.stdin.flush()
-                    current_line_index += 1
-                    last_change_time = current_time
+                # Send next command if available and previous command is complete
+                if current_line_index < len(command_lines):
+                    if current_line_index == 0 or (
+                        self.command_end_marker is not None and
+                        current_time - last_change_time > no_change_timeout and
+                        last_line.endswith(self.command_end_marker)
+                    ):
+                        next_command = command_lines[current_line_index] + '\n'
+                        self.process.stdin.write(next_command.encode("utf-8"))
+                        self.process.stdin.flush()
+                        current_line_index += 1
+                        last_change_time = current_time
                 
                 # Check if all commands are complete
-                if current_line_index >= len(command_lines) and (
-                    self.exit_code is not None or 
-                    (self.command_end_marker is not None and 
-                     current_time - last_change_time > no_change_timeout and 
-                     last_line.endswith(self.command_end_marker))
+                if (current_line_index >= len(command_lines) and
+                    (self.exit_code is not None or
+                     (self.command_end_marker is not None and
+                      current_time - last_change_time > no_change_timeout and
+                      last_line.endswith(self.command_end_marker)))
                 ):
                     break
 

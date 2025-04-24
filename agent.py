@@ -54,6 +54,22 @@ class ToolAction(argparse.Action):
             'params': params
         })
 
+def create_parser() -> argparse.ArgumentParser:
+    """
+    Create and configure the argument parser for the agent
+
+    Returns:
+        argparse.ArgumentParser: Configured argument parser
+    """
+    parser = argparse.ArgumentParser(description='Run the AI agent with specified tools')
+    parser.add_argument('--model-config', required=True, help='Path to the model configuration file')
+    parser.add_argument('--system-prompt-template', required=True, help='Path to the system prompt template file')
+    parser.add_argument('--tool', nargs='+', action=ToolAction, default=[],
+                      help='Tool configuration in format: module.ClassName param1=value1 param2=value2')
+    parser.add_argument('--task', help='Task description for the agent (reads from stdin if not provided)')
+    parser.add_argument('--worker-mode', action="store_true", help='Whether in worker mode')
+    return parser
+
 class Agent:
     @classmethod
     def create_from_args(cls, args: Union[argparse.Namespace, str]) -> 'Agent':
@@ -72,16 +88,8 @@ class Agent:
             ImportError: If tool module import fails
         """
         if isinstance(args, str):
-            # Create parser
-            parser = argparse.ArgumentParser(description='Run the AI agent with specified tools')
-            parser.add_argument('--model-config', required=True, help='Path to the model configuration file')
-            parser.add_argument('--system-prompt-template', required=True, help='Path to the system prompt template file')
-            parser.add_argument('--tool', nargs='+', action=ToolAction, default=[],
-                              help='Tool configuration in format: module.ClassName param1=value1 param2=value2')
-            parser.add_argument('--task', help='Task description for the agent (reads from stdin if not provided)')
-            parser.add_argument('--worker-mode', action="store_true", help='Whether in worker mode')
-            
-            # Parse the string args
+            # Parse the string args using the common parser
+            parser = create_parser()
             args = parser.parse_known_args(args.split())[0]
         try:
             # Get the directory containing agent.py
@@ -289,15 +297,7 @@ async def async_main(args: argparse.Namespace):
 
 def main():
     """Main entry point for the agent CLI"""
-    #try:
-    parser = argparse.ArgumentParser(description='Run the AI agent with specified tools')
-    parser.add_argument('--model-config', required=True, help='Path to the model configuration file')
-    parser.add_argument('--system-prompt-template', required=True, help='Path to the system prompt template file')
-    parser.add_argument('--tool', nargs='+', action=ToolAction, default=[],
-                        help='Tool configuration in format: module.ClassName param1=value1 param2=value2')
-    # Task argument is now optional, handled in async_main
-    parser.add_argument('--task', help='Task description for the agent (reads from stdin if not provided)')
-    parser.add_argument('--worker-mode', action="store_true", help='Whether in worker mode')
+    parser = create_parser()
     args = parser.parse_args()
     # Run the async main function
     asyncio.run(async_main(args))
