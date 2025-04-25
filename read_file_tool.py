@@ -1,31 +1,23 @@
 from tool import Tool
 import aiofiles
-import os
-from typing import List, Optional
-from chat_streamer import ChatStreamer
+from find_file_tool import FindFileTool
+from agent import Agent
 
 class ReadFileTool(Tool):
-    def __init__(self, config_path = "model_configs/openrouter.yaml.example"):
-        self.chat_streamer = ChatStreamer.create_from_yaml(config_path)
-        self.all_files = self._get_all_files_recursive()
+    def __init__(self, config_path: str):
+        """Initialize ReadFileTool with a configuration path.
         
-    def _get_all_files_recursive(self) -> List[str]:
-        file_list = []
-        for root, _, files in os.walk('.'):
-            for file in files:
-                file_list.append(os.path.join(root, file))
-        return file_list
+        Args:
+            config_path (str): Path to the configuration file
+        """
+        self.config_path = config_path
+        # FindFileTool will be initialized when needed to ensure Agent is properly configured
+        self.find_tool = None
         
-    async def _fuzzy_match(self, filename: str) -> Optional[str]:
-        prompt = f"""Find the closest match to '{filename}' from these files:
-{'\n'.join(self.all_files)}
-Respond with just the best matching filename."""
-        
-        best_match = ""
-        async for chunk, _ in self.chat_streamer(prompt):
-            best_match += chunk
-            
-        return best_match.strip() if best_match else None
+    def _ensure_find_tool(self):
+        if self.find_tool is None:
+            agent = Agent.create_from_yaml(self.config_path)
+            self.find_tool = FindFileTool(agent)
 
     def name(self) -> str:
         return "read_file"
@@ -40,27 +32,30 @@ Yields each file's content sequentially. Handles both relative and absolute path
 Automatically attempts fuzzy matching if file not found.
 """
     
-    async def use(self, args: str):
+    async def __call__(self, args: str):
+        self._ensure_find_tool()
         file_paths = args.split('\n')
         for path in file_paths:
             path = path.strip()
             if not path:
                 continue
+                
             try:
                 async with aiofiles.open(path, mode='r', encoding='utf-8') as f:
                     content = await f.read()
                     yield f"File: {path}\n{content}"
             except FileNotFoundError:
-                matched = await self._fuzzy_match(path)
-                if matched:
-                    try:
-                        async with aiofiles.open(matched, mode='r', encoding='utf-8') as f:
-                            content = await f.read()
-                            yield f"Matched: {matched}\n{content}"
-                    except Exception as e:
-                        yield f"Error reading matched file {matched}: {str(e)}"
-                else:
-                    yield f"Error: File not found - {path}"
+                # Try to find the file using FindFileTool
+                async for matched in self.find_tool.__call__(path):
+                    if not matched.startswith("Error"):
+                        try:
+                            async with aiofiles.open(matched, mode='r', encoding='utf-8') as f:
+                                content = await f.read()
+                                yield f"Matched: {matched}\n{content}"
+                        except Exception as e:
+                            yield f"Error reading matched file {matched}: {str(e)}"
+                    else:
+                        yield matched
             except PermissionError:
                 yield f"Error: Permission denied - {path}"
             except Exception as e:

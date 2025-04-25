@@ -62,7 +62,7 @@ Please list them one per line:
 ```
 """
 
-    async def use(self, args: str):
+    async def __call__(self, args: str):
         """
         Prompts the user with the given message and collects their input.
         
@@ -96,7 +96,7 @@ async def test():
     print("\nTool description:")
     print(tool.description())
     print("\nTesting use method:")
-    async for output in tool.use("Please enter your test input (end with @@@):"):
+    async for output in tool.__call__("Please enter your test input (end with @@@):"):
         print(output, end='')
 
 if __name__ == "__main__":

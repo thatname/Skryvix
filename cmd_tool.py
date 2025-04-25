@@ -73,7 +73,7 @@ async def main():
         print(f"Executing command: {cmd}")
         print("-" * 30)
         # Use async for loop to process each character output
-        async for char in cmd_tool.use(cmd):
+        async for char in cmd_tool.__call__(cmd):
             print(char, end='', flush=True)
         print("\n" + "="*50 + "\n")
 

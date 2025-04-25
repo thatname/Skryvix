@@ -28,7 +28,7 @@ class TestReadFileTool(unittest.TestCase):
     async def test_read_single_file(self):
         """Test reading a single existing file"""
         result = []
-        async for output in self.tool.use(self.test_file1):
+        async for output in self.tool.__call__(self.test_file1):
             result.append(output)
         
         self.assertEqual(len(result), 1)
@@ -39,7 +39,7 @@ class TestReadFileTool(unittest.TestCase):
         """Test reading multiple files at once"""
         input_files = f"{self.test_file1}\n{self.test_file2}"
         result = []
-        async for output in self.tool.use(input_files):
+        async for output in self.tool.__call__(input_files):
             result.append(output)
         
         self.assertEqual(len(result), 2)
@@ -49,7 +49,7 @@ class TestReadFileTool(unittest.TestCase):
     async def test_file_not_found(self):
         """Test handling of non-existent file"""
         result = []
-        async for output in self.tool.use("nonexistent.txt"):
+        async for output in self.tool.__call__("nonexistent.txt"):
             result.append(output)
         
         self.assertEqual(len(result), 1)
@@ -60,7 +60,7 @@ class TestReadFileTool(unittest.TestCase):
         """Test fuzzy matching functionality"""
         mock_fuzzy.return_value = self.test_file1
         result = []
-        async for output in self.tool.use("similar_name.txt"):
+        async for output in self.tool.__call__("similar_name.txt"):
             result.append(output)
         
         mock_fuzzy.assert_called_once_with("similar_name.txt")
@@ -73,7 +73,7 @@ class TestReadFileTool(unittest.TestCase):
         """Test when fuzzy matching fails"""
         mock_fuzzy.return_value = None
         result = []
-        async for output in self.tool.use("unknown.txt"):
+        async for output in self.tool.__call__("unknown.txt"):
             result.append(output)
         
         self.assertEqual(len(result), 1)
@@ -82,7 +82,7 @@ class TestReadFileTool(unittest.TestCase):
     async def test_empty_path(self):
         """Test handling of empty path in input"""
         result = []
-        async for output in self.tool.use("\n\n"):
+        async for output in self.tool.__call__("\n\n"):
             result.append(output)
         
         self.assertEqual(len(result), 0)
@@ -94,7 +94,7 @@ class TestReadFileTool(unittest.TestCase):
         os.chmod(self.test_file1, 0o000)
         try:
             result = []
-            async for output in self.tool.use(self.test_file1):
+            async for output in self.tool.__call__(self.test_file1):
                 result.append(output)
             
             self.assertEqual(len(result), 1)

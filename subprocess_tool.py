@@ -91,7 +91,7 @@ class SubProcessTool(Tool):
                 break
         self.running = False
 
-    async def use(self, args):
+    async def __call__(self, args):
         """
         Execute command in persistent process and return result.
         Continuously checks output until it stabilizes (no more changes) or times out.

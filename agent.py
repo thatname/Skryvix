@@ -203,7 +203,7 @@ class Agent:
                 tool = self.tool_map[tool_name]
                 try:
                     # Process tool output
-                    async for output in tool.use(args):
+                    async for output in tool.__call__(args):
                         yield output
 
                     # Add newline after tool output

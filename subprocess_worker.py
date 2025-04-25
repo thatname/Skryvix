@@ -40,7 +40,7 @@ class SubprocessWorker(Worker):
                 0
             )
             # Execute command and process output tokens
-            async for token in self.subprocess_tool.use(self.task.description + "\n@@@"):
+            async for token in self.subprocess_tool.__call__(self.task.description + "\n@@@"):
                 if token:
                     self.task.history += token
             # After process completes, set task state based on exit code

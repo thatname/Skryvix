@@ -39,7 +39,7 @@ The interpreter maintains state between executions, allowing you to:
 - Get detailed error information including stack traces
 """
 
-    async def use(self, args: str):
+    async def __call__(self, args: str):
         # Create queues for stdout and stderr
         output_queue = queue.Queue()
         
@@ -162,7 +162,7 @@ if True
         safe_write(f"\n=== {test_name} ===\n")
         safe_write(f"Code:\n{code}\n")
         safe_write("Output:\n")
-        async for output in interpreter_tool.use(code):
+        async for output in interpreter_tool.__call__(code):
             safe_write(output)
         safe_write("\n")
 

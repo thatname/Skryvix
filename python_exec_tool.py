@@ -18,7 +18,7 @@ The python interpreter is persistent, You can reuse python funciton you've alrea
 In order to complete your development task, you can write python code to manipulate the code within this repository's source files.
 """
 
-    async def use(self, args: str):
+    async def __call__(self, args: str):
         import asyncio
         from concurrent.futures import ThreadPoolExecutor
         import threading
@@ -111,7 +111,7 @@ async def test():
     code1 = 'print("Hello, Python Tool!")'
     safe_write(f"Code: {code1}\n")
     safe_write("Output:\n")
-    async for output in python_tool.use(code1):
+    async for output in python_tool.__call__(code1):
         safe_write(output)
     safe_write("\n\n")
 
@@ -123,7 +123,7 @@ for i in range(3):
 '''
     safe_write(f"Code: {code2}\n")
     safe_write("Output:\n")
-    async for output in python_tool.use(code2):
+    async for output in python_tool.__call__(code2):
         safe_write(output)
     safe_write("\n\n")
 
@@ -137,7 +137,7 @@ print(f"Sum of 1 to 4 is: {result}")
 '''
     safe_write(f"Code: {code3}\n")
     safe_write("Output:\n")
-    async for output in python_tool.use(code3):
+    async for output in python_tool.__call__(code3):
         safe_write(output)
     safe_write("\n\n")
 
@@ -146,7 +146,7 @@ print(f"Sum of 1 to 4 is: {result}")
     code4 = 'print(undefined_variable)'
     safe_write(f"Code: {code4}\n")
     safe_write("Output:\n")
-    async for output in python_tool.use(code4):
+    async for output in python_tool.__call__(code4):
         safe_write(output)
     safe_write("\n")
 
