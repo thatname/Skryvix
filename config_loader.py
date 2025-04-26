@@ -3,6 +3,12 @@ import os
 import yaml
 
 _loaded_objects = {}
+def do_load_from_yaml(path):
+    with open(path) as f:
+        config = yaml.safe_load(f)
+    
+    obj = load_object(config)
+    return obj
 
 def load_from_yaml(path, name=None):
     """
@@ -20,11 +26,8 @@ def load_from_yaml(path, name=None):
     
     if name in _loaded_objects:
         return _loaded_objects[name]
-        
-    with open(path) as f:
-        config = yaml.safe_load(f)
     
-    obj = load_object(config)
+    obj = do_load_from_yaml(path)
     _loaded_objects[name] = obj
     return obj
 

@@ -36,7 +36,7 @@ class SubprocessWorker(Worker):
             self.subprocess_tool = SubProcessTool(
                 command,
                 None,
-                work_dir=work_dir,
+                work_dir,
                 0
             )
             # Execute command and process output tokens
