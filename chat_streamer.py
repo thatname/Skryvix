@@ -137,7 +137,12 @@ class ChatStreamer:
         # Create ChatStreamer instance
         return cls(**config)
 
-    async def __call__(
+    async def __call__(self, message):
+        async for value, reasoning in self.chat(message):
+            if not reasoning:
+                yield value
+
+    async def chat(
         self,
         message
     ):

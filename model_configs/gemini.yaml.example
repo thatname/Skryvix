@@ -1,5 +1,5 @@
-path: "chat_streamer.ChatStreamer"
-args:
+!!python/object/new:chat_streamer.ChatStreamer
+ kwds:
   # Basic Configuration
   model_name: "gemini-2.5-pro-exp-03-25"  # Model name
   base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"  # Optional, custom API endpoint

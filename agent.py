@@ -250,7 +250,7 @@ Now you can try again, utilize tools to complete your task!
             while True:
                 buffer = []
                 # Stream model's response and accumulate
-                async for token, reasoning in self.chat_streamer(prompt):
+                async for token, reasoning in self.chat_streamer.chat(prompt):
                     if not reasoning:
                         buffer.append(token)
                     yield token

@@ -1,6 +1,6 @@
 import sys
 import os
-
+import asyncio
 # Add parent directory to Python path to import cli_runner
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -18,16 +18,12 @@ def test_openrouter():
         print(f"Using config: {config_path}")
         print(f"Prompt: {prompt}")
         print("-" * 50)
-        
-        result = run_with_config(config_path, prompt)
-        
         print("Response:")
-        print(result)
+        asyncio.run(run_with_config(config_path, prompt))
         print("-" * 50)
         
     except Exception as e:
         print(f"Error occurred: {str(e)}")
-        sys.exit(1)
 
 if __name__ == "__main__":
     test_openrouter()

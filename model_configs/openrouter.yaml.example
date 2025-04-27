@@ -1,5 +1,5 @@
-path: "chat_streamer.ChatStreamer"
-args:
+!!python/object/new:chat_streamer.ChatStreamer
+ kwds:
   # Basic Configuration
   model_name: "deepseek/deepseek-r1:free"  # Model name
   base_url: "https://openrouter.ai/api/v1"  # Optional, custom API endpoint

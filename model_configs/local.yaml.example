@@ -1,5 +1,5 @@
-path: "chat_streamer.ChatStreamer"
-args:
+!!python/object/new:chat_streamer.ChatStreamer
+ kwds:
   # Basic Configuration
   model_name: null  # Model name
   base_url: "http://127.0.0.1:5000/v1"  # Optional, custom API endpoint
