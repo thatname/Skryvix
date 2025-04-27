@@ -1,7 +1,7 @@
 import argparse
 import asyncio
 import sys
-from config_loader import load_from_yaml
+from config_loader import load_from_file
 from typing import Optional, Union
 from ask_tool import read_multiline_stdin
 
@@ -27,7 +27,7 @@ async def run_with_config(config_path: str, prompt: Optional[str], worker_mode: 
     """
     try:
         # Load the object from YAML config
-        tool = load_from_yaml(config_path)
+        tool = load_from_file(config_path)
         
         if not prompt:
             if not worker_mode: # Prompt user in active mode (default)
