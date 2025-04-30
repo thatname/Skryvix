@@ -1,11 +1,7 @@
 
-from typing import List, Tuple, Optional, AsyncGenerator, Any, Dict, Union
+from typing import List, Optional, Any, Dict
 from openai import AsyncOpenAI
-import asyncio
-import yaml
-import json
 import os
-from pathlib import Path
 
 class ChatStreamer:
     def __init__(
@@ -13,7 +9,7 @@ class ChatStreamer:
         api_key_env_var: str,
         model_name: str = "gpt-3.5-turbo",
         base_url: Optional[str] = None,
-        system_prompt: str = "You are a helpful AI assistant.",
+        system_prompt: Optional[str] = None, #"You are a helpful AI assistant.",
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
         top_k: Optional[int] = None,
@@ -68,7 +64,10 @@ class ChatStreamer:
             client_kwargs["base_url"] = base_url
         self.client = AsyncOpenAI(**client_kwargs)
     def clear_history(self):
-        self.history = [{"role": "system", "content": self.system_prompt}]
+        if self.system_prompt:
+            self.history = [{"role": "system", "content": self.system_prompt}]
+        else:
+            self.history = []
 
     def _build_completion_params(self) -> Dict[str, Any]:
         """
@@ -103,39 +102,6 @@ class ChatStreamer:
             params["seed"] = self.seed
 
         return params
-
-    @classmethod
-    def create_from_yaml(cls, config_path: Union[str, Path]) -> 'ChatStreamer':
-        """
-        Create ChatStreamer instance from YAML config file
-
-        Args:
-            config_path (Union[str, Path]): YAML config file path
-
-        Returns:
-            ChatStreamer: Configured ChatStreamer instance
-
-        Raises:
-            FileNotFoundError: Config file not found
-            yaml.YAMLError: YAML parsing error
-        """
-
-        # Convert path to Path object and check if file exists
-        config_path = Path(config_path)
-        if not config_path.exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-
-        # Read and parse YAML file
-        try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f) or {}
-                # Get API key
-        
-        except yaml.YAMLError as e:
-            raise yaml.YAMLError(f"YAML parsing error: {e}")
-
-        # Create ChatStreamer instance
-        return cls(**config)
 
     async def __call__(self, message):
         async for value, reasoning in self.chat(message):
