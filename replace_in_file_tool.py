@@ -35,6 +35,10 @@ Replaces the first occurrence of the search content with the replacement content
             yield "Error: No file path provided"
             return
 
+        # Initialize counters and message collection
+        successful_replacements = 0
+        messages = []
+        
         # Read file content
         try:
             async with aiofiles.open(file_path, mode='r', encoding='utf-8') as f:
@@ -46,9 +50,11 @@ Replaces the first occurrence of the search content with the replacement content
             yield f"Error reading file {file_path}: {str(e)}"
             return
 
-        # Parse and apply SEARCH/REPLACE blocks
+        # Parse and apply all SEARCH/REPLACE blocks
         current_pos = 1
+        block_number = 0
         modified = False
+        
         while current_pos < len(lines):
             try:
                 # Find start of SEARCH block
@@ -57,6 +63,7 @@ Replaces the first occurrence of the search content with the replacement content
                 if current_pos >= len(lines):
                     break
                 
+                block_number += 1
                 search_lines = []
                 current_pos += 1
                 
@@ -94,15 +101,18 @@ Replaces the first occurrence of the search content with the replacement content
                 if count > 0:
                     content = new_content
                     modified = True
+                    successful_replacements += 1
+                    messages.append(f"Block {block_number}: Successfully replaced content")
                 else:
-                    yield f"Warning: Search content not found:\n{search_content}\n"
+                    messages.append(f"Block {block_number}: Warning - Search content not found:\n{search_content}\n")
                 
                 current_pos += 1
                 
             except Exception as e:
-                yield f"Error processing SEARCH/REPLACE block: {str(e)}"
+                yield f"Error processing SEARCH/REPLACE block {block_number}: {str(e)}"
                 return
 
+        # Generate final report
         if not modified:
             yield "No replacements were made"
             return
@@ -111,6 +121,15 @@ Replaces the first occurrence of the search content with the replacement content
         try:
             async with aiofiles.open(file_path, mode='w', encoding='utf-8') as f:
                 await f.write(content)
-            yield f"Successfully updated {file_path}"
+            
+            # Prepare and yield final report
+            report = [
+                f"Successfully updated {file_path}",
+                f"Total replacements made: {successful_replacements}/{block_number}",
+                "\nDetailed results:"
+            ]
+            report.extend(messages)
+            yield "\n".join(report)
+            
         except Exception as e:
             yield f"Error writing to file {file_path}: {str(e)}"
