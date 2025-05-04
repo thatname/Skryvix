@@ -9,16 +9,27 @@ class ReplaceInFileTool(Tool):
         pass
 
     def name(self) -> str:
-        return "replace_in_file"
+        return "replace_in_files"
     
     def description(self) -> str:
-        return """* replace_in_file - Replaces content in a file using SEARCH/REPLACE blocks. Example:
-```replace_in_file
-path/to/file.txt
+        return """* replace_in_files -  A tool for making precise content replacements in one or multiple files using SEARCH/REPLACE blocks. Example:
+```replace_in_files
+path/to/file1.tsx
 <<<<<<< SEARCH
-content to find
+old function name
 =======
-content to replace with
+new function name
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+old variable name
+=======
+new variable name
+>>>>>>> REPLACE
+src/component2.tsx
+<<<<<<< SEARCH
+interface Props {
+=======
+interface ComponentProps {
 >>>>>>> REPLACE
 ```
 Replaces the first occurrence of the search content with the replacement content.

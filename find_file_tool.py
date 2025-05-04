@@ -47,10 +47,10 @@ Returns the path of the best matching file if found, or an error message if not 
                 return
                 
             # If not found, try fuzzy matching
-            matched = await self._fuzzy_match(filename)
-            if matched and os.path.exists(matched):
-                yield matched
-            else:
-                yield f"Error: File not found - {filename}"
+            #matched = await self._fuzzy_match(filename)
+            #if matched and os.path.exists(matched):
+            #    yield matched
+            #else:
+            #    yield f"Error: File not found - {filename}"
         except Exception as e:
             yield f"Error finding file {filename}: {str(e)}"
