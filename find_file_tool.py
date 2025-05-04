@@ -6,7 +6,6 @@ from agent import Agent
 class FindFileTool(Tool):
     def __init__(self, agent: Agent):
         self.agent = agent
-        self.all_files = self._get_all_files_recursive()
         
     def _get_all_files_recursive(self) -> List[str]:
         file_list = []
@@ -16,8 +15,9 @@ class FindFileTool(Tool):
         return file_list
         
     async def _fuzzy_match(self, filename: str) -> Optional[str]:
+        all_files = self._get_all_files_recursive()
         prompt = f"""Find the closest match to '{filename}' from these files:
-{'\n'.join(self.all_files)}
+{'\n'.join(all_files)}
 Respond with just the best matching filename."""
         
         response = await self.agent(prompt)
