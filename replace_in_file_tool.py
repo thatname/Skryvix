@@ -155,8 +155,13 @@ Replaces the first occurrence of the search content with the replacement content
                             await f.write(content)
                         
                         # Add file report to overall report
-                        overall_report.append(f"\nFile: {file_path}")
-                        overall_report.append(f"Replacements made: {successful_replacements}/{block_number}")
+                        overall_report.append(f"\n```{file_path}```")
+                        overall_report.append(f"""Replacements made in {file_path}: {successful_replacements}/{block_number}
+After change, the file content
+```
+<-- -->
+```
+""")
                         overall_report.append("Detailed results:")
                         overall_report.extend(["  " + msg for msg in messages])
                     except Exception as e:
@@ -169,10 +174,7 @@ Replaces the first occurrence of the search content with the replacement content
             yield "Error: No valid files processed"
         else:
             summary = [
-                "=== Replace Operation Summary ===",
-                f"Files processed: {total_files}",
                 f"Total replacements made: {total_replacements}/{total_blocks}",
-                "\n=== Detailed Report ==="
             ]
             summary.extend(overall_report)
             yield "\n".join(summary)
