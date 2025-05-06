@@ -38,17 +38,5 @@ Automatically attempts fuzzy matching if file not found.
                     async for line in f:
                         yield line
                 yield f"```\n\n"
-            #except FileNotFoundError:
-            #    # Try to find the file using FindFileTool
-            #    async for matched in self.find_tool.__call__(path):
-            #        if not matched.startswith("Error"):
-            #            try:
-            #                async with aiofiles.open(matched, mode='r', encoding='utf-8') as f:
-            #                    content = await f.read()
-            #                    yield f"Matched: {matched}\n{content}"
-            #            except Exception as e:
-            #                yield f"Error reading matched file {matched}: {str(e)}"
-            #        else:
-            #            yield matched
             except Exception as e:
                 yield f"Error reading {path}: {str(e)}"
