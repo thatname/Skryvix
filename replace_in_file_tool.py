@@ -4,9 +4,9 @@ import re
 
 
 class ReplaceInFileTool(Tool):
-    def __init__(self):
-        """Initialize ReplaceInFileTool"""
-        pass
+    def __init__(self, file_manager):
+        """Initialize ReplaceInFileTool with FileManager"""
+        self.file_manager = file_manager
 
     def name(self) -> str:
         return "replace_in_files"
@@ -70,8 +70,7 @@ Replaces the first occurrence of the search content with the replacement content
 
                 # Read file content
                 try:
-                    async with aiofiles.open(file_path, mode='r', encoding='utf-8') as f:
-                        content = await f.read()
+                    content = await self.file_manager.read_file(file_path)
                 except FileNotFoundError:
                     overall_report.append(f"\nError: File not found: {file_path}")
                     current_pos += 1
@@ -151,8 +150,7 @@ Replaces the first occurrence of the search content with the replacement content
                 # Write modified content back to file if any changes were made
                 if modified:
                     try:
-                        async with aiofiles.open(file_path, mode='w', encoding='utf-8') as f:
-                            await f.write(content)
+                        await self.file_manager.write_file(file_path, content, encoding='utf-8')
                         
                         # Add file report to overall report
                         overall_report.append(f"\n```{file_path}```")

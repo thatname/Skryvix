@@ -2,27 +2,22 @@ from tool import Tool
 import aiofiles
 from find_file_tool import FindFileTool
 from agent import Agent
+from file_manager import FileManager
 
 class ReadFileTool(Tool):
-    def __init__(self):#, find_tool: FindFileTool):
-        """Initialize ReadFileTool with a configuration path.
-        
-        Args:
-            config_path (str): Path to the configuration file
-        """
-        #self.find_tool = find_tool
+    def __init__(self, file_manager: FileManager):
+        self.file_manager = file_manager
 
     def name(self) -> str:
         return "read_file"
     
     def description(self) -> str:
-        return """* read_file - Reads one or more files and yields their contents. Example:
+        return """* read_file - Reads one or more files. Example:
 ```read_file
 path/to/file1.txt
 path/to/file2.txt
 ```
-Yields each file's content sequentially. Handles both relative and absolute paths.
-Automatically attempts fuzzy matching if file not found.
+The content of the files will be shown to you in the last message.
 """
     
     async def __call__(self, args: str):
@@ -31,12 +26,8 @@ Automatically attempts fuzzy matching if file not found.
             path = path.strip()
             if not path:
                 continue
-                
             try:
-                yield f"```Content of {path}\n"
-                async with aiofiles.open(path, mode='r', encoding='utf-8') as f:
-                    async for line in f:
-                        yield line
-                yield f"```\n\n"
+                await self.file_manager.read_file(path)
+                yield f"Successfully read the file {path}"
             except Exception as e:
                 yield f"Error reading {path}: {str(e)}"
