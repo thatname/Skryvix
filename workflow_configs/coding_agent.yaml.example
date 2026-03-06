@@ -1,0 +1,11 @@
+!!python/object/apply:agent.Agent
+ args:
+  - !!python/object/apply:config_loader.do_load_yaml {args: [model_configs/local.yaml.example]}
+  -
+   - !!python/object/apply:python_interpreter_tool.PythonInterpreterTool {}
+   - !!python/object/apply:ask_tool.AskTool {}
+   - !!python/object/apply:lldb_tool.LLDBTool {}
+   - !!python/object/apply:cmd_tool.CmdTool {}
+   - !!python/object/apply:read_file_tool.ReadFileTool {}
+   - !!python/object/apply:replace_in_file_tool.ReplaceInFileTool {}
+  - !!python/object/apply:config_loader.load_from_file {args: [prompts/system.j2]}
