@@ -17,7 +17,7 @@ class FindFileTool(Tool):
     async def _fuzzy_match(self, filename: str) -> Optional[str]:
         all_files = self._get_all_files_recursive()
         prompt = f"""Find the closest match to '{filename}' from these files:
-{'\n'.join(all_files)}
+{chr(10).join(all_files)}
 Respond with just the best matching filename."""
         
         response = await self.agent(prompt)
