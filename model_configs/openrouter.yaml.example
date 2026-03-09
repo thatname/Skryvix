@@ -1,5 +1,5 @@
 !!python/object/apply:chat_streamer.ChatStreamer
- kwds:
+ args:
   # Basic Configuration
   model_name: "qwen/qwen3-235b-a22b:free"  # Model name
   base_url: "https://openrouter.ai/api/v1"  # Optional, custom API endpoint

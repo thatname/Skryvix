@@ -5,6 +5,7 @@ import asyncio
 import re
 import argparse
 import sys
+import traceback
 from chat_streamer import ChatStreamer
 from tool import Tool
 from ask_tool import read_multiline_stdin
@@ -166,4 +167,5 @@ Now you can try again, utilize tools to complete your task!
                     break
                     
         except Exception as e:
-            yield f"Exception: {str(e)}"
+            call_stack = traceback.format_exc()
+            yield f"Exception: {str(e)}\n\nCall Stack:\n{call_stack}"

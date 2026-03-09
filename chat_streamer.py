@@ -142,4 +142,4 @@ class ChatStreamer:
                     yield content, False
 
         except Exception as e:
-            yield f"Exception :{e}"
+            yield f"Exception: {e}", False
